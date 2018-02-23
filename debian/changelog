@@ -1,3 +1,9 @@
+xserver-xorg-video-hwcomposer (0.3.8+gemian1) stretch; urgency=medium
+
+  * Branched for Gemian
+
+ -- TheKit <nekit1000@gmail.com>  Wed, 23 Feb 2018 13:59:53 +0300
+
 xserver-xorg-video-hwcomposer (0.3.8-1) UNRELEASED; urgency=medium
 
   * Initial release. (Closes: #XXXXXX)
