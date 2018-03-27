@@ -6,6 +6,8 @@ CPPFLAGS += -I/usr/include/android -DMESA_EGL_NO_X11_HEADERS
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		--libdir=\$${exec_prefix}/lib \
+		--enable-drihybris \
+		--enable-glamor-hybris \
 
 # Install in debian/tmp to retain control through dh_install:
 override_dh_auto_install:
