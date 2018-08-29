@@ -38,3 +38,4 @@ hwc_present_screen_init(ScreenPtr pScreen)
 {
     return present_screen_init(pScreen, NULL);
 }
+

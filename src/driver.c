@@ -458,7 +458,6 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     }
 
     hwc->buffer = NULL;
-    hwc->damage = NULL;
 
     hwc->glamor = FALSE;
     hwc->drihybris = FALSE;
@@ -513,6 +512,41 @@ LoadPalette(
        hwc->colors[index].green = colors[index].green << Gshift;
        hwc->colors[index].blue = colors[index].blue << shift;
    }
+}
+
+static void hwcBlockHandler(ScreenPtr pScreen, void *timeout)
+{
+    ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
+    HWCPtr hwc = HWCPTR(pScrn);
+    PixmapPtr rootPixmap;
+    int err;
+
+    pScreen->BlockHandler = hwc->BlockHandler;
+    pScreen->BlockHandler(pScreen, timeout);
+    pScreen->BlockHandler = hwcBlockHandler;
+
+    RegionPtr dirty = DamageRegion(hwc->damage);
+    unsigned num_cliprects = REGION_NUM_RECTS(dirty);
+
+    if (num_cliprects)
+    {
+        void *pixels = NULL;
+        rootPixmap = pScreen->GetScreenPixmap(pScreen);
+        hwc->eglHybrisUnlockNativeBuffer(hwc->buffer);
+
+        hwc_egl_renderer_update(pScreen);
+
+        err = hwc->eglHybrisLockNativeBuffer(hwc->buffer,
+                        HYBRIS_USAGE_SW_READ_RARELY|HYBRIS_USAGE_SW_WRITE_OFTEN,
+                        0, 0, hwc->stride, pScrn->virtualY, &pixels);
+
+        if (!hwc->glamor) {
+            if (!pScreen->ModifyPixmapHeader(rootPixmap, -1, -1, -1, -1, -1, pixels))
+                FatalError("Couldn't adjust screen pixmap\n");
+        }
+
+        DamageEmpty(hwc->damage);
+    }
 }
 
 static Bool
@@ -705,7 +739,9 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
         xf86ShowUnusedOptions(pScrn->scrnIndex, pScrn->options);
     }
 
-    hwc_vblank_screen_init(pScreen);
+    /* Wrap the current BlockHandler function */
+    hwc->BlockHandler = pScreen->BlockHandler;
+    pScreen->BlockHandler = hwcBlockHandler;
 
 #ifdef ENABLE_DRIHYBRIS
     if (hwc->drihybris) {

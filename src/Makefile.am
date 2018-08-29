@@ -39,5 +39,4 @@ hwcomposer_drv_la_SOURCES = \
          driver.h \
          hwcomposer.c \
          present.c \
-         renderer.c \
-         vblank.c
+         renderer.c
