@@ -1,3 +1,11 @@
+xserver-xorg-video-hwcomposer (0.3.9+gemian1) stretch; urgency=medium
+
+  * HW cursor support via OpenGL composition
+  * Different panel rotation modes can be set in config
+  * Redraw by timer fixes
+
+ -- TheKit <nekit1000@gmail.com>  Sun, 6 Jan 2019 21:59:53 +0100
+
 xserver-xorg-video-hwcomposer (0.3.8+gemian1) stretch; urgency=medium
 
   * Branched for Gemian
