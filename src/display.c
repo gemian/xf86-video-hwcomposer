@@ -14,6 +14,8 @@ Bool hwc_lights_init(ScrnInfoPtr pScrn)
 	hw_module_t *lightsModule = NULL;
 	struct light_device_t *lightsDevice = NULL;
 
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_lights_init\n");
+
 	/* Use 255 as default */
 	hwc->screenBrightness = 255;
 
@@ -36,6 +38,8 @@ hwc_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
 {
     ScreenPtr pScreen = pScrn->pScreen;
 
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_xf86crtc_resize width: %d, height: %d\n", width, height);
+
     if (pScrn->virtualX == width && pScrn->virtualY == height)
         return TRUE;
 
@@ -49,6 +53,7 @@ static const xf86CrtcConfigFuncsRec hwc_xf86crtc_config_funcs = {
 
 static void hwcomposer_crtc_dpms(xf86CrtcPtr crtc, int mode)
 {
+	xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwcomposer_crtc_dpms mode: %d\n", mode);
 }
 
 static Bool hwcomposer_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int x, int y)
@@ -57,18 +62,20 @@ static Bool hwcomposer_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rot
     crtc->x = x;
     crtc->y = y;
     crtc->rotation = rotation;
+	xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwcomposer_set_mode_major\n");
 
     return TRUE;
 }
 
 static void
-hwc_set_cursor_colors(xf86CrtcPtr crtc, int bg, int fg)
+hwcomposer_set_cursor_colors(xf86CrtcPtr crtc, int bg, int fg)
 {
+	xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwcomposer_set_cursor_colors\n");
 
 }
 
 static void
-hwc_set_cursor_position(xf86CrtcPtr crtc, int x, int y)
+hwcomposer_set_cursor_position(xf86CrtcPtr crtc, int x, int y)
 {
     HWCPtr hwc = HWCPTR(crtc->scrn);
     hwc->cursorX = x;
@@ -84,7 +91,7 @@ hwc_set_cursor_position(xf86CrtcPtr crtc, int x, int y)
  * back to software cursors.
  */
 static Bool
-hwc_load_cursor_argb_check(xf86CrtcPtr crtc, CARD32 *image)
+hwcomposer_load_cursor_argb_check(xf86CrtcPtr crtc, CARD32 *image)
 {
     HWCPtr hwc = HWCPTR(crtc->scrn);
 
@@ -99,7 +106,7 @@ hwc_load_cursor_argb_check(xf86CrtcPtr crtc, CARD32 *image)
 }
 
 static void
-hwc_hide_cursor(xf86CrtcPtr crtc)
+hwcomposer_hide_cursor(xf86CrtcPtr crtc)
 {
     HWCPtr hwc = HWCPTR(crtc->scrn);
     hwc->cursorShown = FALSE;
@@ -107,7 +114,7 @@ hwc_hide_cursor(xf86CrtcPtr crtc)
 }
 
 static void
-hwc_show_cursor(xf86CrtcPtr crtc)
+hwcomposer_show_cursor(xf86CrtcPtr crtc)
 {
     HWCPtr hwc = HWCPTR(crtc->scrn);
     hwc->cursorShown = TRUE;
@@ -117,21 +124,21 @@ hwc_show_cursor(xf86CrtcPtr crtc)
 static const xf86CrtcFuncsRec hwcomposer_crtc_funcs = {
     .dpms = hwcomposer_crtc_dpms,
     .set_mode_major = hwcomposer_set_mode_major,
-    .set_cursor_colors = hwc_set_cursor_colors,
-    .set_cursor_position = hwc_set_cursor_position,
-    .show_cursor = hwc_show_cursor,
-    .hide_cursor = hwc_hide_cursor,
-    .load_cursor_argb_check = hwc_load_cursor_argb_check
+    .set_cursor_colors = hwcomposer_set_cursor_colors,
+    .set_cursor_position = hwcomposer_set_cursor_position,
+    .show_cursor = hwcomposer_show_cursor,
+    .hide_cursor = hwcomposer_hide_cursor,
+    .load_cursor_argb_check = hwcomposer_load_cursor_argb_check
 };
 
 static void
-hwc_output_dpms(xf86OutputPtr output, int mode)
+hwcomposer_output_dpms(xf86OutputPtr output, int mode)
 {
     ScrnInfoPtr pScrn;
     pScrn = output->scrn;
     HWCPtr hwc = HWCPTR(pScrn);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_output_dpms mode: %d\n",mode);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcomposer_output_dpms mode: %d\n", mode);
 
     hwc->dpmsMode = mode;
 
@@ -155,38 +162,49 @@ hwc_output_dpms(xf86OutputPtr output, int mode)
 }
 
 static xf86OutputStatus
-hwc_output_detect(xf86OutputPtr output)
+hwcomposer_output_detect(xf86OutputPtr output)
 {
-    return XF86OutputStatusConnected;
+	HWCPtr hwc = HWCPTR(output->scrn);
+	int index = (int64_t)output->driver_private;
+
+	xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwcomposer_output_detect index: %d\n", index);
+
+	if (hwc->connected_outputs & (1 << index))
+		return XF86OutputStatusConnected;
+	else
+		return XF86OutputStatusDisconnected;
 }
 
 static int
-hwc_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
+hwcomposer_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 {
     return MODE_OK;
 }
 
 static DisplayModePtr
-hwc_output_get_modes(xf86OutputPtr output)
+hwcomposer_output_get_modes(xf86OutputPtr output)
 {
     ScrnInfoPtr pScrn;
     pScrn = output->scrn;
     HWCPtr hwc = HWCPTR(pScrn);
+	xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwcomposer_output_get_modes\n");
 
     return xf86DuplicateModes(NULL, hwc->modes);
 }
 
-static const xf86OutputFuncsRec hwc_output_funcs = {
-    .dpms = hwc_output_dpms,
-    .detect = hwc_output_detect,
-    .mode_valid = hwc_output_mode_valid,
-    .get_modes = hwc_output_get_modes
+static const xf86OutputFuncsRec hwcomposer_output_funcs = {
+    .dpms = hwcomposer_output_dpms,
+    .detect = hwcomposer_output_detect,
+    .mode_valid = hwcomposer_output_mode_valid,
+    .get_modes = hwcomposer_output_get_modes
 };
 
 void
 hwc_trigger_redraw(ScrnInfoPtr pScrn)
 {
     HWCPtr hwc = HWCPTR(pScrn);
+
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw\n");
 
     pthread_mutex_lock(&(hwc->dirtyLock));
     hwc->dirty = TRUE;
@@ -195,11 +213,9 @@ hwc_trigger_redraw(ScrnInfoPtr pScrn)
 }
 
 Bool
-hwc_display_pre_init(ScrnInfoPtr pScrn)
+hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output)
 {
     HWCPtr hwc = HWCPTR(pScrn);
-    xf86OutputPtr output;
-    xf86CrtcPtr crtc;
 
     /* Pick up size from the "Display" subsection if it exists */
     if (pScrn->display->virtualX) {
@@ -209,8 +225,10 @@ hwc_display_pre_init(ScrnInfoPtr pScrn)
         /* Pick rotated HWComposer screen resolution */
         pScrn->virtualX = hwc->hwcHeight;
         pScrn->virtualY = hwc->hwcWidth;
-     }
+    }
     pScrn->displayWidth = pScrn->virtualX;
+
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init dx: %d, w: %d, h: %d, external: %d\n", pScrn->display->virtualX, pScrn->virtualX, pScrn->virtualY, hwc->external_connected);
 
     /* Construct a mode with the screen's initial dimensions */
     hwc->modes = xf86CVTMode(pScrn->virtualX, pScrn->virtualY, 60, 0, 0);
@@ -218,17 +236,17 @@ hwc_display_pre_init(ScrnInfoPtr pScrn)
     xf86CrtcConfigInit(pScrn, &hwc_xf86crtc_config_funcs);
     xf86CrtcSetSizeRange(pScrn, 8, 8, SHRT_MAX, SHRT_MAX);
 
-    output = xf86OutputCreate(pScrn, &hwc_output_funcs, "hwcomposer");
-    output->possible_crtcs = 0x7f;
+	*output = xf86OutputCreate(pScrn, &hwcomposer_output_funcs, "hwcomposer");
+	(*output)->possible_crtcs = 0x7f;
 
-    crtc = xf86CrtcCreate(pScrn, &hwcomposer_crtc_funcs);
+	*crtc = xf86CrtcCreate(pScrn, &hwcomposer_crtc_funcs);
 
-    xf86ProviderSetup(pScrn, NULL, "hwcomposer");
+	xf86ProviderSetup(pScrn, NULL, "hwcomposer");
 
-    xf86InitialConfiguration(pScrn, TRUE);
+	xf86InitialConfiguration(pScrn, TRUE);
 
-    pScrn->currentMode = pScrn->modes;
-    crtc->funcs->set_mode_major(crtc, pScrn->currentMode, RR_Rotate_0, 0, 0);
+	pScrn->currentMode = pScrn->modes;
+	(*crtc)->funcs->set_mode_major(*crtc, pScrn->currentMode, RR_Rotate_0, 0, 0);
 
     return TRUE;
 }

@@ -3,6 +3,7 @@
 #include "xf86_OSproc.h"
 
 #include "xf86Cursor.h"
+#include "xf86Crtc.h"
 
 #ifdef XvExtension
 #include "xf86xv.h"
@@ -25,6 +26,8 @@
 
 #include "compat-api.h"
 
+#define HWC_MAX_SCREENS 2
+
 /* function prototypes */
 
 extern Bool SwitchMode(SWITCH_MODE_ARGS_DECL);
@@ -39,7 +42,7 @@ typedef struct _color
 } dummy_colors;
 
 void hwc_trigger_redraw(ScrnInfoPtr pScrn);
-Bool hwc_display_pre_init(ScrnInfoPtr pScrn);
+Bool hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output);
 Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn);
 Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn);
 void hwc_hwcomposer_close(ScrnInfoPtr pScrn);
@@ -121,6 +124,13 @@ typedef struct HWCRec
     Bool        (*CreateWindow)() ;     /* wrapped CreateWindow */
     Bool prop;
 
+    /* XRANDR support begin */
+    int num_screens;
+    struct _xf86Crtc *paCrtcs[HWC_MAX_SCREENS];
+    struct _xf86Output *paOutputs[HWC_MAX_SCREENS];
+    int connected_outputs;
+    /* XRANDR support end */
+
     DamagePtr damage;
     Bool dirty;
     Bool glamor;
@@ -143,7 +153,14 @@ typedef struct HWCRec
     hwc2_compat_display_t* hwc2_primary_display;
     hwc2_compat_layer_t* hwc2_primary_layer;
 
-    hwc_renderer_rec renderer;
+	hwc2_compat_display_t* hwc2_external_display;
+	hwc2_compat_layer_t* hwc2_external_layer;
+	bool external_connected;
+	hwc2_display_t external_display_id;
+	int extWidth;
+	int extHeight;
+
+	hwc_renderer_rec renderer;
     EGLClientBuffer buffer;
     int stride;
 

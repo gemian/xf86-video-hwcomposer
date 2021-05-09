@@ -38,17 +38,51 @@ void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
     ScrnInfoPtr pScrn = ((HwcProcs_v20*) listener)->pScrn;
     HWCPtr hwc = HWCPTR(pScrn);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "onHotplugReceived(%d, %" PRIu64 ", %s, %s)",
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "onHotplugReceived(%d, %" PRIu64 ", %s, %s)\n",
            sequenceId, display,
            connected ? "connected" : "disconnected",
-           primaryDisplay ? "primary\n" : "external\n");
-
+           primaryDisplay ? "primary" : "external");
+	if (!primaryDisplay) {
+		hwc->external_connected = connected;
+		hwc->external_display_id = display;
+		hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
+//		if (connected) {
+//			for (int i = 0; i < 5 * 1000; ++i) {
+//				// Wait at most 5s for hotplug events
+//				if ((hwc->hwc2_external_display = hwc2_compat_device_get_display_by_id(hwc->hwc2Device, display)))
+//					break;
+//				usleep(1000);
+//			}
+//			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "onHotplugReceived ext: %d\n", hwc->hwc2_external_display);
+//			HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(hwc->hwc2_external_display);
+//			assert(config);
+//
+//			hwc->extWidth = config->width;
+//			hwc->extHeight = config->height;
+//			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ext width: %i height: %i\n", config->width, config->height);
+//			free(config);
+//			hwc2_compat_layer_t* layer = hwc->hwc2_external_layer = hwc2_compat_display_create_layer(hwc->hwc2_external_display);
+//
+//			hwc2_compat_layer_set_composition_type(layer, HWC2_COMPOSITION_CLIENT);
+//			hwc2_compat_layer_set_blend_mode(layer, HWC2_BLEND_MODE_NONE);
+//			hwc2_compat_layer_set_source_crop(layer, 0.0f, 0.0f, hwc->extWidth, hwc->extHeight);
+//			hwc2_compat_layer_set_display_frame(layer, 0, 0, hwc->extWidth, hwc->extHeight);
+//			hwc2_compat_layer_set_visible_region(layer, 0, 0, hwc->extWidth, hwc->extHeight);
+//
+//			hwc2_compat_display_set_power_mode(hwc->hwc2_external_display, HWC2_POWER_MODE_ON);
+//		} else {
+//			hwc2_compat_display_set_power_mode(hwc->hwc2_external_display, HWC2_POWER_MODE_OFF);
+//			hwc2_compat_display_destroy_layer(hwc->hwc2_external_display, hwc->hwc2_external_layer);
+//			hwc->hwc2_external_layer = NULL;
+//		}
+	}
     hwc2_compat_device_on_hotplug(hwc->hwc2Device, display, connected);
 }
 
 void hwc2_callback_refresh(HWC2EventListener* listener, int32_t sequenceId,
                            hwc2_display_t display)
 {
+	printf("hwc2_callback_refresh (%p, %d, %ld)\n", listener, sequenceId, display);
 }
 
 Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
@@ -65,6 +99,8 @@ Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
 
     hwc2_compat_device_t* hwc2_device = hwc->hwc2Device = hwc2_compat_device_new(false);
     assert(hwc2_device);
+
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer2_init external: %d\n", hwc->external_connected);
 
     //hwc_set_power_mode(pScrn, HWC_DISPLAY_PRIMARY, 1);
 
@@ -86,6 +122,7 @@ Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
     hwc->hwcWidth = config->width;
     hwc->hwcHeight = config->height;
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "width: %i height: %i\n", config->width, config->height);
+    free(config);
 
 	hwc2_compat_layer_t* layer = hwc->hwc2_primary_layer =
         hwc2_compat_display_create_layer(hwc->hwc2_primary_display);
@@ -158,7 +195,7 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 
 void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
 {
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_set_power_mode_hwcomposer2\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_set_power_mode_hwcomposer2 disp: %d, mode: %d\n", disp, mode);
 
     HWCPtr hwc = HWCPTR(pScrn);
 
@@ -168,5 +205,13 @@ void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
         hwc->lastPresentFence = -1;
     }
 
-    hwc2_compat_display_set_power_mode(hwc->hwc2_primary_display, (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
+    if (disp == 0) {
+		hwc2_compat_display_set_power_mode(hwc->hwc2_primary_display,
+										   (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
+	} else {
+    	//		if ((hwc2_external_display = hwc2_compat_device_get_display_by_id(hwc2_device, external_display_id)))?
+
+		hwc2_compat_display_set_power_mode(hwc->hwc2_external_display,
+										   (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
+	}
 }
