@@ -57,37 +57,36 @@ GLfloat cursorVertices[8];
 Bool hwc_init_hybris_native_buffer(ScrnInfoPtr pScrn)
 {
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
 
-    if (strstr(eglQueryString(renderer->display, EGL_EXTENSIONS), "EGL_HYBRIS_native_buffer") == NULL)
+    if (strstr(eglQueryString(hwc->egl_display, EGL_EXTENSIONS), "EGL_HYBRIS_native_buffer") == NULL)
     {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "EGL_HYBRIS_native_buffer is missing. Make sure libhybris EGL implementation is used\n");
         return FALSE;
     }
 
-    renderer->eglHybrisCreateNativeBuffer = (PFNEGLHYBRISCREATENATIVEBUFFERPROC) eglGetProcAddress("eglHybrisCreateNativeBuffer");
-    assert(renderer->eglHybrisCreateNativeBuffer != NULL);
+	hwc->egl_proc.eglHybrisCreateNativeBuffer = (PFNEGLHYBRISCREATENATIVEBUFFERPROC) eglGetProcAddress("eglHybrisCreateNativeBuffer");
+    assert(hwc->egl_proc.eglHybrisCreateNativeBuffer != NULL);
 
-    renderer->eglHybrisCreateRemoteBuffer = (PFNEGLHYBRISCREATEREMOTEBUFFERPROC) eglGetProcAddress("eglHybrisCreateRemoteBuffer");
-    assert(renderer->eglHybrisCreateRemoteBuffer != NULL);
+	hwc->egl_proc.eglHybrisCreateRemoteBuffer = (PFNEGLHYBRISCREATEREMOTEBUFFERPROC) eglGetProcAddress("eglHybrisCreateRemoteBuffer");
+    assert(hwc->egl_proc.eglHybrisCreateRemoteBuffer != NULL);
 
-    renderer->eglHybrisLockNativeBuffer = (PFNEGLHYBRISLOCKNATIVEBUFFERPROC) eglGetProcAddress("eglHybrisLockNativeBuffer");
-    assert(renderer->eglHybrisLockNativeBuffer != NULL);
+	hwc->egl_proc.eglHybrisLockNativeBuffer = (PFNEGLHYBRISLOCKNATIVEBUFFERPROC) eglGetProcAddress("eglHybrisLockNativeBuffer");
+    assert(hwc->egl_proc.eglHybrisLockNativeBuffer != NULL);
 
-    renderer->eglHybrisUnlockNativeBuffer = (PFNEGLHYBRISUNLOCKNATIVEBUFFERPROC) eglGetProcAddress("eglHybrisUnlockNativeBuffer");
-    assert(renderer->eglHybrisUnlockNativeBuffer != NULL);
+	hwc->egl_proc.eglHybrisUnlockNativeBuffer = (PFNEGLHYBRISUNLOCKNATIVEBUFFERPROC) eglGetProcAddress("eglHybrisUnlockNativeBuffer");
+    assert(hwc->egl_proc.eglHybrisUnlockNativeBuffer != NULL);
 
-    renderer->eglHybrisReleaseNativeBuffer = (PFNEGLHYBRISRELEASENATIVEBUFFERPROC) eglGetProcAddress("eglHybrisReleaseNativeBuffer");
-    assert(renderer->eglHybrisReleaseNativeBuffer != NULL);
+	hwc->egl_proc.eglHybrisReleaseNativeBuffer = (PFNEGLHYBRISRELEASENATIVEBUFFERPROC) eglGetProcAddress("eglHybrisReleaseNativeBuffer");
+    assert(hwc->egl_proc.eglHybrisReleaseNativeBuffer != NULL);
 
-    renderer->eglCreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC) eglGetProcAddress("eglCreateImageKHR");
-    assert(renderer->eglCreateImageKHR != NULL);
+	hwc->egl_proc.eglCreateImageKHR = (PFNEGLCREATEIMAGEKHRPROC) eglGetProcAddress("eglCreateImageKHR");
+    assert(hwc->egl_proc.eglCreateImageKHR != NULL);
 
-    renderer->eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC) eglGetProcAddress("eglDestroyImageKHR");
-    assert(renderer->eglDestroyImageKHR  != NULL);
+	hwc->egl_proc.eglDestroyImageKHR = (PFNEGLDESTROYIMAGEKHRPROC) eglGetProcAddress("eglDestroyImageKHR");
+    assert(hwc->egl_proc.eglDestroyImageKHR  != NULL);
 
-    renderer->glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) eglGetProcAddress("glEGLImageTargetTexture2DOES");
-    assert(renderer->glEGLImageTargetTexture2DOES != NULL);
+	hwc->egl_proc.glEGLImageTargetTexture2DOES = (PFNGLEGLIMAGETARGETTEXTURE2DOESPROC) eglGetProcAddress("glEGLImageTargetTexture2DOES");
+    assert(hwc->egl_proc.glEGLImageTargetTexture2DOES != NULL);
     return TRUE;
 }
 
@@ -105,12 +104,12 @@ MessageCallback( GLenum source,
             type, severity, message );
 }
 
-Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
+Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor)
 {
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+	hwc_renderer_ptr renderer = &hwc_display->hwc_renderer;
 
-    EGLDisplay display;
+    EGLDisplay egl_display;
     EGLConfig ecfg;
     EGLint num_config;
     EGLint attr[] = {       // some attributes to set up our egl-interface
@@ -134,37 +133,41 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
     EGLBoolean rv;
     int err;
 
-    struct ANativeWindow *win = hwc_get_native_window(pScrn);
+    struct ANativeWindow *win = hwc_get_native_window(hwc_display);
 
-    display = eglGetDisplay(NULL);
-    assert(eglGetError() == EGL_SUCCESS);
-    assert(display != EGL_NO_DISPLAY);
-    renderer->display = display;
+    if (hwc->egl_display == NULL) {
+		egl_display = eglGetDisplay(NULL);
+		assert(eglGetError() == EGL_SUCCESS);
+		assert(egl_display != EGL_NO_DISPLAY);
+		hwc->egl_display = egl_display;
 
-    rv = eglInitialize(display, 0, 0);
-    assert(eglGetError() == EGL_SUCCESS);
-    assert(rv == EGL_TRUE);
+		rv = eglInitialize(egl_display, 0, 0);
+		assert(eglGetError() == EGL_SUCCESS);
+		assert(rv == EGL_TRUE);
 
-    eglChooseConfig((EGLDisplay) display, attr, &ecfg, 1, &num_config);
-    assert(eglGetError() == EGL_SUCCESS);
-    assert(rv == EGL_TRUE);
+		eglChooseConfig((EGLDisplay) egl_display, attr, &ecfg, 1, &num_config);
+		assert(eglGetError() == EGL_SUCCESS);
+		assert(rv == EGL_TRUE);
+	} else {
+		egl_display = hwc->egl_display;
+    }
 
-    surface = eglCreateWindowSurface((EGLDisplay) display, ecfg, (EGLNativeWindowType)win, NULL);
+    surface = eglCreateWindowSurface((EGLDisplay) egl_display, ecfg, (EGLNativeWindowType)win, NULL);
     assert(eglGetError() == EGL_SUCCESS);
     assert(surface != EGL_NO_SURFACE);
     renderer->surface = surface;
 
-    context = eglCreateContext((EGLDisplay) display, ecfg, EGL_NO_CONTEXT, ctxattr);
+    context = eglCreateContext((EGLDisplay) egl_display, ecfg, EGL_NO_CONTEXT, ctxattr);
     assert(eglGetError() == EGL_SUCCESS);
     assert(context != EGL_NO_CONTEXT);
     renderer->context = context;
 
     // Create shared context for render thread
-    renderer->renderContext = eglCreateContext(renderer->display, ecfg, context, ctxattr);
+    renderer->renderContext = eglCreateContext(egl_display, ecfg, context, ctxattr);
     assert(eglGetError() == EGL_SUCCESS);
     assert(renderer->renderContext != EGL_NO_CONTEXT);
 
-    assert(eglMakeCurrent((EGLDisplay) display, surface, surface, context) == EGL_TRUE);
+    assert(eglMakeCurrent((EGLDisplay) egl_display, surface, surface, context) == EGL_TRUE);
 
     // During init, enable debug output
     glEnable              ( GL_DEBUG_OUTPUT );
@@ -173,28 +176,36 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
 
     const char *version = glGetString(GL_VERSION);
     assert(version);
-    printf("%s\n",version);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init version: %s\n",version);
 
     glGenTextures(1, &renderer->rootTexture);
-    glGenTextures(1, &renderer->cursorTexture);
+    glGenTextures(1, &hwc->cursorTexture);
     renderer->image = EGL_NO_IMAGE_KHR;
     renderer->rootShader.program = 0;
     renderer->projShader.program = 0;
-    renderer->fence = EGL_NO_SYNC_KHR;
+    hwc->egl_fence = EGL_NO_SYNC_KHR;
 
     // Reattach context as surfaceless so it can be used in different thread
-    assert(eglMakeCurrent(renderer->display, EGL_NO_SURFACE, EGL_NO_SURFACE, context) == EGL_TRUE);
+    assert(eglMakeCurrent(egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, context) == EGL_TRUE);
 
     return TRUE;
 }
 
-void hwc_egl_renderer_screen_init(ScreenPtr pScreen)
+void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
 {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+	hwc_display_ptr display = NULL;
+	if (disp == HWC_DISPLAY_PRIMARY) {
+		display = &hwc->primary_display;
+	} else {
+		display = &hwc->external_display;
+	}
+	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-    int result = eglMakeCurrent(renderer->display, renderer->surface, renderer->surface, renderer->renderContext);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init\n");
+
+	int result = eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, renderer->renderContext);
     printf("%d %d\n", result, eglGetError());
     assert(result == EGL_TRUE);
 
@@ -203,9 +214,9 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen)
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     if (!hwc->glamor && renderer->image == EGL_NO_IMAGE_KHR) {
-        renderer->image = renderer->eglCreateImageKHR(renderer->display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_HYBRIS,
+        renderer->image = hwc->egl_proc.eglCreateImageKHR(hwc->egl_display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_HYBRIS,
                                             (EGLClientBuffer)hwc->buffer, NULL);
-        renderer->glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, renderer->image);
+		hwc->egl_proc.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, renderer->image);
     }
 
     if (!renderer->rootShader.program) {
@@ -239,10 +250,10 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen)
         renderer->projShader.texture = glGetUniformLocation(prog, "texture");
     }
 
-    if (hwc->rotation == HWC_ROTATE_CW || hwc->rotation == HWC_ROTATE_CCW)
-        hwc_ortho_2d(renderer->projection, 0.0f, pScrn->virtualY, 0.0f, pScrn->virtualX);
+    if (display->rotation == HWC_ROTATE_CW || display->rotation == HWC_ROTATE_CCW)
+        hwc_ortho_2d(renderer->projection, 0.0f, display->height, 0.0f, display->width);
     else
-        hwc_ortho_2d(renderer->projection, 0.0f, pScrn->virtualX, 0.0f, pScrn->virtualY);
+        hwc_ortho_2d(renderer->projection, 0.0f, display->width, 0.0f, display->height);
 }
 
 void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int width, int height,
@@ -252,6 +263,8 @@ void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int width, int he
     int cw = width, ch = height;
     int t;
     int i = 0;
+
+	xf86DrvMsg(0, X_INFO, "hwc_translate_cursor\n");
 
     #define P(x, y) vertices[i++] = x;  vertices[i++] = y; // Point vertex
     switch (rotation) {
@@ -295,20 +308,28 @@ void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int width, int he
     #undef P
 }
 
-void hwc_egl_render_cursor(ScreenPtr pScreen) {
+void hwc_egl_render_cursor(ScreenPtr pScreen, int disp) {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+	hwc_display_ptr display = NULL;
+	if (disp == HWC_DISPLAY_PRIMARY) {
+		display = &hwc->primary_display;
+	} else {
+		display = &hwc->external_display;
+	}
+	hwc_renderer_ptr renderer = &display->hwc_renderer;
+
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_render_cursor disp: %d\n", disp);
 
     glUseProgram(renderer->projShader.program);
 
-    glBindTexture(GL_TEXTURE_2D, renderer->cursorTexture);
+    glBindTexture(GL_TEXTURE_2D, hwc->cursorTexture);
     glUniform1i(renderer->projShader.texture, 0);
 
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
 
-    hwc_translate_cursor(hwc->rotation, hwc->cursorX, hwc->cursorY,
+    hwc_translate_cursor(display->rotation, hwc->cursorX, hwc->cursorY,
                          hwc->cursorWidth, hwc->cursorHeight,
                          pScrn->virtualX, pScrn->virtualY,
                          cursorVertices);
@@ -316,7 +337,7 @@ void hwc_egl_render_cursor(ScreenPtr pScreen) {
     glVertexAttribPointer(renderer->projShader.position, 2, GL_FLOAT, 0, 0, cursorVertices);
     glEnableVertexAttribArray(renderer->projShader.position);
 
-    glVertexAttribPointer(renderer->projShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[hwc->rotation]);
+    glVertexAttribPointer(renderer->projShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[display->rotation]);
     glEnableVertexAttribArray(renderer->projShader.texcoords);
 
     glUniformMatrix4fv(renderer->projShader.transform, 1, GL_FALSE, renderer->projection);
@@ -333,9 +354,11 @@ void *hwc_egl_renderer_thread(void *user_data)
     ScreenPtr pScreen = (ScreenPtr)user_data;
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+    bool external_initialised = FALSE;
 
-    hwc_egl_renderer_screen_init(pScreen);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread\n");
+
+	hwc_egl_renderer_screen_init(pScreen, 0);
 
     while (hwc->rendererIsRunning) {
         pthread_mutex_lock(&(hwc->dirtyLock));
@@ -347,33 +370,57 @@ void *hwc_egl_renderer_thread(void *user_data)
         hwc->dirty = FALSE;
         pthread_mutex_unlock(&(hwc->dirtyLock));
 
+        if ((hwc->connected_outputs & 2) && !external_initialised) {
+			hwc_egl_renderer_screen_init(pScreen, 1);
+			external_initialised = TRUE;
+		}
+
         pthread_mutex_lock(&(hwc->rendererLock));
-        if (renderer->fence != EGL_NO_SYNC_KHR) {
-            eglClientWaitSyncKHR(renderer->display,
-                renderer->fence,
+        if (hwc->egl_fence != EGL_NO_SYNC_KHR) {
+            eglClientWaitSyncKHR(hwc->egl_display,
+								 hwc->egl_fence,
                 EGL_SYNC_FLUSH_COMMANDS_BIT_KHR,
                 EGL_FOREVER_KHR);
         }
-        if (hwc->dpmsMode == DPMSModeOn)
-            hwc_egl_renderer_update(pScreen);
+		if (hwc->primary_display.dpmsMode == DPMSModeOn)
+			hwc_egl_renderer_update(pScreen, 0);
+		if (hwc->external_display.dpmsMode == DPMSModeOn && external_initialised)
+			hwc_egl_renderer_update(pScreen, 1);
         pthread_mutex_unlock(&(hwc->rendererLock));
     }
 
-    hwc_egl_renderer_screen_close(pScreen);
+    if (external_initialised) {
+		hwc_egl_renderer_screen_close(pScreen, 1);
+	}
+	hwc_egl_renderer_screen_close(pScreen, 0);
 
     return NULL;
 }
 
-void hwc_egl_renderer_update(ScreenPtr pScreen)
+void hwc_egl_renderer_update(ScreenPtr pScreen, int disp)
 {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+	hwc_display_ptr display = NULL;
+	if (disp == HWC_DISPLAY_PRIMARY) {
+		display = &hwc->primary_display;
+	} else {
+		display = &hwc->external_display;
+	}
+	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-    if (hwc->glamor) {
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, renderer->context);
+
+	assert(eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, renderer->renderContext) == EGL_TRUE);
+
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update viewport glamor: %d, width: %d, height: %d\n", hwc->glamor,display->width, display->height);
+
+	if (hwc->glamor) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, hwc->hwcWidth, hwc->hwcHeight);
+        glViewport(0, 0, display->width, display->height);
     }
+
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 1\n");
 
     glUseProgram(renderer->rootShader.program);
 
@@ -381,31 +428,49 @@ void hwc_egl_renderer_update(ScreenPtr pScreen)
     glBindTexture(GL_TEXTURE_2D, renderer->rootTexture);
     glUniform1i(renderer->rootShader.texture, 0);
 
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 2\n");
+
     glVertexAttribPointer(renderer->rootShader.position, 2, GL_FLOAT, 0, 0, squareVertices);
     glEnableVertexAttribArray(renderer->rootShader.position);
 
-    glVertexAttribPointer(renderer->rootShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[hwc->rotation]);
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 3\n");
+
+	glVertexAttribPointer(renderer->rootShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[display->rotation]);
     glEnableVertexAttribArray(renderer->rootShader.texcoords);
 
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 4\n");
 
-    glDisableVertexAttribArray(renderer->rootShader.position);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 5\n");
+
+	glDisableVertexAttribArray(renderer->rootShader.position);
     glDisableVertexAttribArray(renderer->rootShader.texcoords);
 
-    if (hwc->cursorShown)
-        hwc_egl_render_cursor(pScreen);
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 6\n");
 
-    eglSwapBuffers (renderer->display, renderer->surface );  // get the rendered buffer to the screen
+	if (hwc->cursorShown)
+        hwc_egl_render_cursor(pScreen, disp);
+
+    eglSwapBuffers (hwc->egl_display, renderer->surface);  // get the rendered buffer to the screen
 }
 
-void hwc_egl_renderer_screen_close(ScreenPtr pScreen)
+void hwc_egl_renderer_screen_close(ScreenPtr pScreen, int disp)
 {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-    hwc_renderer_ptr renderer = &hwc->renderer;
+	hwc_display_ptr display = NULL;
+	if (disp == HWC_DISPLAY_PRIMARY) {
+		display = &hwc->primary_display;
+	} else {
+		display = &hwc->external_display;
+	}
+	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-    if (renderer->image != EGL_NO_IMAGE_KHR) {
-        renderer->eglDestroyImageKHR(renderer->display, renderer->image);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_close\n");
+
+	if (renderer->image != EGL_NO_IMAGE_KHR) {
+        hwc->egl_proc.eglDestroyImageKHR(hwc->egl_display, renderer->image);
         renderer->image = EGL_NO_IMAGE_KHR;
     }
 }

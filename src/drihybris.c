@@ -37,7 +37,7 @@ hwc_drihybris_pixmap_from_hybris_buffer(ScreenPtr screen,
         goto free_pixmap;
     
     EGLClientBuffer buf;
-    hwc->renderer.eglHybrisCreateRemoteBuffer(width, height, HYBRIS_USAGE_HW_RENDER | HYBRIS_USAGE_HW_TEXTURE | HYBRIS_USAGE_SW_READ_OFTEN,
+    hwc->egl_proc.eglHybrisCreateRemoteBuffer(width, height, HYBRIS_USAGE_HW_RENDER | HYBRIS_USAGE_HW_TEXTURE | HYBRIS_USAGE_SW_READ_OFTEN,
                                             HYBRIS_PIXEL_FORMAT_RGBA_8888, stride,
                                             numInts, ints, numFds, fds, &buf);
 

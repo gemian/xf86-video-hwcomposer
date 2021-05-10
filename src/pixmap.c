@@ -37,9 +37,10 @@ DevPrivateKeyRec hwc_pixmap_index;
 static PixmapPtr
 hwc_pixmap_create(ScreenPtr screen, int w, int h, int depth, unsigned usage)
 {
-    ScrnInfoPtr scrn;
+	ScrnInfoPtr scrn = xf86ScreenToScrn(screen);
     struct hwc_pixmap *priv;
     PixmapPtr pixmap;
+	xf86DrvMsg(scrn->scrnIndex, X_INFO, "hwc_pixmap_create\n");
 
     /* only DRI2 pixmap is suppported */
     if (!(usage & HWC_CREATE_PIXMAP_DRIHYBRIS))
@@ -84,6 +85,7 @@ Bool hwc_set_pixmap_buf(PixmapPtr pPix, EGLClientBuffer buf)
     struct hwc_pixmap *priv;
     void *pixels = NULL;
     int err;
+	xf86DrvMsg(scrn->scrnIndex, X_INFO, "hwc_set_pixmap_buf\n");
 
     priv = hwc_get_pixmap_private(pPix);
     if (!priv && !buf)
@@ -94,8 +96,8 @@ Bool hwc_set_pixmap_buf(PixmapPtr pPix, EGLClientBuffer buf)
             if (priv->buf == buf)
                 return TRUE;
 
-            hwc->renderer.eglHybrisUnlockNativeBuffer(priv->buf);
-            hwc->renderer.eglHybrisReleaseNativeBuffer(priv->buf);
+            hwc->egl_proc.eglHybrisUnlockNativeBuffer(priv->buf);
+            hwc->egl_proc.eglHybrisReleaseNativeBuffer(priv->buf);
             priv->handle_valid = FALSE;
         }
     }
@@ -108,7 +110,7 @@ Bool hwc_set_pixmap_buf(PixmapPtr pPix, EGLClientBuffer buf)
         }
         priv->buf = buf;
 
-        err = hwc->renderer.eglHybrisLockNativeBuffer(priv->buf,
+        err = hwc->egl_proc.eglHybrisLockNativeBuffer(priv->buf,
                                     HYBRIS_USAGE_SW_READ_OFTEN,
                                     0, 0, pPix->drawable.width, pPix->drawable.height, &pixels);
 

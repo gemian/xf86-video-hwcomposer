@@ -27,24 +27,23 @@ typedef struct
 } HwcProcs_v20;
 
 void hwc2_callback_vsync(HWC2EventListener* listener, int32_t sequenceId,
-                         hwc2_display_t display, int64_t timestamp)
+                         hwc2_display_t display_id, int64_t timestamp)
 {
 }
 
 void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
-                           hwc2_display_t display, bool connected,
+                           hwc2_display_t display_id, bool connected,
                            bool primaryDisplay)
 {
     ScrnInfoPtr pScrn = ((HwcProcs_v20*) listener)->pScrn;
     HWCPtr hwc = HWCPTR(pScrn);
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "onHotplugReceived(%d, %" PRIu64 ", %s, %s)\n",
-           sequenceId, display,
+           sequenceId, display_id,
            connected ? "connected" : "disconnected",
            primaryDisplay ? "primary" : "external");
 	if (!primaryDisplay) {
-		hwc->external_connected = connected;
-		hwc->external_display_id = display;
+		hwc->external_display_id = display_id;
 		hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
 //		if (connected) {
 //			for (int i = 0; i < 5 * 1000; ++i) {
@@ -76,19 +75,48 @@ void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
 //			hwc->hwc2_external_layer = NULL;
 //		}
 	}
-    hwc2_compat_device_on_hotplug(hwc->hwc2Device, display, connected);
+    hwc2_compat_device_on_hotplug(hwc->hwc2Device, display_id, connected);
 }
 
 void hwc2_callback_refresh(HWC2EventListener* listener, int32_t sequenceId,
-                           hwc2_display_t display)
+                           hwc2_display_t display_id)
 {
-	printf("hwc2_callback_refresh (%p, %d, %ld)\n", listener, sequenceId, display);
+	xf86DrvMsg(0, X_INFO, "hwc2_callback_refresh (%p, %d, %ld)\n", listener, sequenceId, display_id);
+}
+
+Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_device_t* hwc2_compat_device, int id) {
+	for (int i = 0; i < 5 * 1000; ++i) {
+		// Wait at most 5s for hotplug events
+		if ((display->hwc2_compat_display = hwc2_compat_device_get_display_by_id(hwc2_compat_device, id)))
+			break;
+		usleep(1000);
+	}
+	assert(display->hwc2_compat_display);
+
+	HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(display->hwc2_compat_display);
+	assert(config);
+
+	display->width = config->width;
+	display->height = config->height;
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init width: %i height: %i, id: %d\n", display->width, display->height, id);
+	free(config);
+
+	hwc2_compat_layer_t* layer = display->hwc2_compat_layer = hwc2_compat_display_create_layer(display->hwc2_compat_display);
+
+	display->lastPresentFence = -1;
+
+	hwc2_compat_layer_set_composition_type(layer, HWC2_COMPOSITION_CLIENT);
+	hwc2_compat_layer_set_blend_mode(layer, HWC2_BLEND_MODE_NONE);
+	hwc2_compat_layer_set_source_crop(layer, 0.0f, 0.0f, config->width, config->height);
+	hwc2_compat_layer_set_display_frame(layer, 0, 0, config->width, config->height);
+	hwc2_compat_layer_set_visible_region(layer, 0, 0, config->width, config->height);
+
+	return TRUE;
 }
 
 Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
 {
     HWCPtr hwc = HWCPTR(pScrn);
-	int err;
     static int composerSequenceId = 0;
     
     HwcProcs_v20* procs = malloc(sizeof(HwcProcs_v20));
@@ -100,42 +128,12 @@ Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
     hwc2_compat_device_t* hwc2_device = hwc->hwc2Device = hwc2_compat_device_new(false);
     assert(hwc2_device);
 
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer2_init external: %d\n", hwc->external_connected);
-
-    //hwc_set_power_mode(pScrn, HWC_DISPLAY_PRIMARY, 1);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer2_init outputs: %d\n", hwc->connected_outputs);
 
     hwc2_compat_device_register_callback(hwc2_device, &procs->listener,
         composerSequenceId++);
 
-    for (int i = 0; i < 5 * 1000; ++i) {
-        // Wait at most 5s for hotplug events
-        if ((hwc->hwc2_primary_display =
-            hwc2_compat_device_get_display_by_id(hwc2_device, 0)))
-            break;
-        usleep(1000);
-    }
-    assert(hwc->hwc2_primary_display);
-
-    HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(hwc->hwc2_primary_display);
-    assert(config);
-
-    hwc->hwcWidth = config->width;
-    hwc->hwcHeight = config->height;
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "width: %i height: %i\n", config->width, config->height);
-    free(config);
-
-	hwc2_compat_layer_t* layer = hwc->hwc2_primary_layer =
-        hwc2_compat_display_create_layer(hwc->hwc2_primary_display);
-
-    hwc->lastPresentFence = -1;
-
-    hwc2_compat_layer_set_composition_type(layer, HWC2_COMPOSITION_CLIENT);
-    hwc2_compat_layer_set_blend_mode(layer, HWC2_BLEND_MODE_NONE);
-    hwc2_compat_layer_set_source_crop(layer, 0.0f, 0.0f, hwc->hwcWidth, hwc->hwcHeight);
-    hwc2_compat_layer_set_display_frame(layer, 0, 0, hwc->hwcWidth, hwc->hwcHeight);
-    hwc2_compat_layer_set_visible_region(layer, 0, 0, hwc->hwcWidth, hwc->hwcHeight);
-
-    return TRUE;
+    return hwc_display_init(pScrn, &hwc->primary_display, hwc2_device, 0);
 }
 
 void hwc_hwcomposer2_close(ScrnInfoPtr pScrn)
@@ -146,8 +144,7 @@ void hwc_hwcomposer2_close(ScrnInfoPtr pScrn)
 void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 								struct ANativeWindowBuffer *buffer)
 {
-	ScrnInfoPtr pScrn = (ScrnInfoPtr)user_data;
-	HWCPtr hwc = HWCPTR(pScrn);
+	hwc_display_ptr hwc_display = (hwc_display_ptr)user_data;
 
 	uint32_t numTypes = 0;
     uint32_t numRequests = 0;
@@ -155,40 +152,40 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 
     int acquireFenceFd = HWCNativeBufferGetFence(buffer);
 
-    hwc2_compat_display_t* hwcDisplay = hwc->hwc2_primary_display;
+    hwc2_compat_display_t* hwc2_compat_display = hwc_display->hwc2_compat_display;
 
-    error = hwc2_compat_display_validate(hwcDisplay, &numTypes,
+    error = hwc2_compat_display_validate(hwc2_compat_display, &numTypes,
                                                     &numRequests);
     if (error != HWC2_ERROR_NONE && error != HWC2_ERROR_HAS_CHANGES) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "prepare: validate failed: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate failed: %d", error);
         return;
     }
 
     if (numTypes || numRequests) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "prepare: validate required changes: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate required changes: %d", error);
         return;
     }
 
-    error = hwc2_compat_display_accept_changes(hwcDisplay);
+    error = hwc2_compat_display_accept_changes(hwc2_compat_display);
     if (error != HWC2_ERROR_NONE) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "prepare: acceptChanges failed: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: acceptChanges failed: %d", error);
         return;
     }
 
-    hwc2_compat_display_set_client_target(hwcDisplay, /* slot */0, buffer,
+    hwc2_compat_display_set_client_target(hwc2_compat_display, /* slot */0, buffer,
                                           acquireFenceFd,
                                           HAL_DATASPACE_UNKNOWN);
 
     int presentFence = -1;
-    hwc2_compat_display_present(hwcDisplay, &presentFence);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_present_hwcomposer2 pF: %d\n", presentFence);
+    hwc2_compat_display_present(hwc2_compat_display, &presentFence);
+    xf86DrvMsg(hwc_display->index, X_INFO, "hwc_present_hwcomposer2 pF: %d\n", presentFence);
 
-    if (hwc->lastPresentFence != -1) {
-        sync_wait(hwc->lastPresentFence, -1);
-        close(hwc->lastPresentFence);
+    if (hwc_display->lastPresentFence != -1) {
+        sync_wait(hwc_display->lastPresentFence, -1);
+        close(hwc_display->lastPresentFence);
     }
 
-    hwc->lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
+	hwc_display->lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
 
     HWCNativeBufferSetFence(buffer, presentFence);
 }
@@ -198,20 +195,18 @@ void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_set_power_mode_hwcomposer2 disp: %d, mode: %d\n", disp, mode);
 
     HWCPtr hwc = HWCPTR(pScrn);
+	hwc_display_ptr hwc_display = NULL;
+	if (disp == 0) {
+		hwc_display = &hwc->primary_display;
+	} else {
+		hwc_display = &hwc->external_display;
+	}
 
-    if (mode == DPMSModeOff && hwc->lastPresentFence != -1) {
-        sync_wait(hwc->lastPresentFence, -1);
-        close(hwc->lastPresentFence);
-        hwc->lastPresentFence = -1;
+	if (mode == DPMSModeOff && hwc_display->lastPresentFence != -1) {
+        sync_wait(hwc_display->lastPresentFence, -1);
+        close(hwc_display->lastPresentFence);
+		hwc_display->lastPresentFence = -1;
     }
 
-    if (disp == 0) {
-		hwc2_compat_display_set_power_mode(hwc->hwc2_primary_display,
-										   (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
-	} else {
-    	//		if ((hwc2_external_display = hwc2_compat_device_get_display_by_id(hwc2_device, external_display_id)))?
-
-		hwc2_compat_display_set_power_mode(hwc->hwc2_external_display,
-										   (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
-	}
+	hwc2_compat_display_set_power_mode(hwc_display->hwc2_compat_display, (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
 }

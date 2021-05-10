@@ -41,7 +41,7 @@ typedef struct _color
     int blue;
 } dummy_colors;
 
-void hwc_trigger_redraw(ScrnInfoPtr pScrn);
+void hwc_trigger_redraw(ScrnInfoPtr pScrn, int disp);
 Bool hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output);
 Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn);
 Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn);
@@ -49,24 +49,37 @@ void hwc_hwcomposer_close(ScrnInfoPtr pScrn);
 Bool hwc_lights_init(ScrnInfoPtr pScrn);
 Bool hwc_drihybris_screen_init(ScreenPtr screen);
 
-struct ANativeWindow *hwc_get_native_window(ScrnInfoPtr pScrn);
 void hwc_toggle_screen_brightness(ScrnInfoPtr pScrn);
 void hwc_set_power_mode(ScrnInfoPtr pScrn, int disp, int mode);
 void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode);
 
 Bool hwc_init_hybris_native_buffer(ScrnInfoPtr pScrn);
-Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor);
 void hwc_egl_renderer_close(ScrnInfoPtr pScrn);
-void hwc_egl_renderer_screen_init(ScreenPtr pScreen);
-void hwc_egl_renderer_screen_close(ScreenPtr pScreen);
+void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp);
+void hwc_egl_renderer_screen_close(ScreenPtr pScreen, int disp);
 void *hwc_egl_renderer_thread(void *user_data);
-void hwc_egl_renderer_update(ScreenPtr pScreen);
+void hwc_egl_renderer_update(ScreenPtr pScreen, int disp);
 
 void hwc_ortho_2d(float* mat, float left, float right, float bottom, float top);
 GLuint hwc_link_program(const GLchar *vert_src, const GLchar *frag_src);
 
 Bool hwc_present_screen_init(ScreenPtr pScreen);
 Bool hwc_cursor_init(ScreenPtr pScreen);
+
+typedef enum {
+	OPTION_ACCEL_METHOD,
+	OPTION_EGL_PLATFORM,
+	OPTION_SW_CURSOR,
+	OPTION_ROTATE
+} Opts;
+
+static const OptionInfoRec Options[] = {
+		{ OPTION_ACCEL_METHOD, "AccelMethod", OPTV_STRING, {0}, FALSE},
+		{ OPTION_EGL_PLATFORM, "EGLPlatform", OPTV_STRING, {0}, FALSE},
+		{ OPTION_SW_CURSOR,     "SWcursor",    OPTV_BOOLEAN,{0}, FALSE},
+		{ OPTION_ROTATE,       "Rotate",      OPTV_STRING, {0}, FALSE },
+		{ -1,               NULL,       OPTV_NONE,    {0}, FALSE }
+};
 
 typedef enum {
     HWC_ROTATE_NORMAL,
@@ -92,21 +105,45 @@ typedef struct {
     PFNEGLCREATEIMAGEKHRPROC eglCreateImageKHR;
     PFNEGLDESTROYIMAGEKHRPROC eglDestroyImageKHR;
     PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES;
+} egl_proc_rec, *egl_proc_ptr;
 
-    EGLDisplay display;
+typedef struct {
     EGLSurface surface;
     EGLContext context;
     EGLContext renderContext;
     GLuint rootTexture;
-    GLuint cursorTexture;
 
     float projection[16];
     EGLImageKHR image;
-    EGLSyncKHR fence;
 
     hwc_renderer_shader rootShader;
     hwc_renderer_shader projShader;
 } hwc_renderer_rec, *hwc_renderer_ptr;
+
+typedef struct {
+	int index;
+	int dpmsMode;
+
+	int width;
+	int height;
+	hwc_rotation rotation;
+
+	hwc_renderer_rec hwc_renderer;
+	uint32_t hwcVersion;
+
+	//hwc v1 items
+	hwc_composer_device_1_t *hwcDevicePtr;
+	hwc_display_contents_1_t **hwcContents;
+	hwc_layer_1_t *fblayer;
+
+	//hwc v2 items
+	hwc2_compat_display_t* hwc2_compat_display;
+	hwc2_compat_layer_t* hwc2_compat_layer;
+	int lastPresentFence;
+} hwc_display_rec, *hwc_display_ptr;
+
+Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
+struct ANativeWindow *hwc_get_native_window(hwc_display_ptr hwc_display);
 
 typedef struct HWCRec
 {
@@ -135,32 +172,22 @@ typedef struct HWCRec
     Bool dirty;
     Bool glamor;
     Bool drihybris;
-    hwc_rotation rotation;
 
     gralloc_module_t *gralloc;
     alloc_device_t *alloc;
     void *libminisf;
 
-    hwc_composer_device_1_t *hwcDevicePtr;
-    hwc_display_contents_1_t **hwcContents;
-    hwc_layer_1_t *fblayer;
-    uint32_t hwcVersion;
-    int hwcWidth;
-    int hwcHeight;
-    int lastPresentFence;
+//    hwc_composer_device_1_t *hwcDevicePtr;
+//    hwc_display_contents_1_t **hwcContents;
+//    hwc_layer_1_t *fblayer;
+//    uint32_t hwcVersion;
 
     hwc2_compat_device_t* hwc2Device;
-    hwc2_compat_display_t* hwc2_primary_display;
-    hwc2_compat_layer_t* hwc2_primary_layer;
+	hwc_display_rec primary_display;
+	hwc_display_rec external_display;
 
-	hwc2_compat_display_t* hwc2_external_display;
-	hwc2_compat_layer_t* hwc2_external_layer;
-	bool external_connected;
 	hwc2_display_t external_display_id;
-	int extWidth;
-	int extHeight;
 
-	hwc_renderer_rec renderer;
     EGLClientBuffer buffer;
     int stride;
 
@@ -170,14 +197,18 @@ typedef struct HWCRec
     int cursorY;
     int cursorWidth;
     int cursorHeight;
+	GLuint cursorTexture;
 
     struct light_device_t *lightsDevice;
     int screenBrightness;
 
     DisplayModePtr modes;
-    int dpmsMode;
 
-    pthread_t rendererThread;
+	egl_proc_rec egl_proc;
+	EGLDisplay egl_display;
+	EGLSyncKHR egl_fence;
+
+	pthread_t rendererThread;
     int rendererIsRunning;
     pthread_mutex_t rendererLock;
     pthread_mutex_t dirtyLock;

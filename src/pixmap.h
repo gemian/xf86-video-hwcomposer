@@ -53,4 +53,4 @@ enum {
 
 extern Bool hwc_pixmap_init(ScreenPtr screen);
 
-#endif /* AMDGPU_PIXMAP_H */
+#endif /* HWC_PIXMAP_H */
