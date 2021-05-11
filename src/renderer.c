@@ -54,6 +54,19 @@ static const GLfloat textureVertices[][8] = {
 
 GLfloat cursorVertices[8];
 
+const GLfloat *getTextureVerticesForRotation(hwc_rotation rotation) {
+    switch (rotation) {
+        case HWC_ROTATE_NORMAL:
+            return textureVertices[0];
+        case HWC_ROTATE_CW:
+            return textureVertices[1];
+        case HWC_ROTATE_UD:
+            return textureVertices[2];
+        case HWC_ROTATE_CCW:
+            return textureVertices[3];
+    }
+}
+
 Bool hwc_init_hybris_native_buffer(ScrnInfoPtr pScrn)
 {
     HWCPtr hwc = HWCPTR(pScrn);
@@ -256,25 +269,24 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
         hwc_ortho_2d(renderer->projection, 0.0f, display->width, 0.0f, display->height);
 }
 
-void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int width, int height,
+void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int cursorWidth, int cursorHeight,
                           int displayWidth, int displayHeight,
                           float* vertices) {
     int w = displayWidth, h = displayHeight;
-    int cw = width, ch = height;
+    int cw = cursorWidth, ch = cursorHeight;
     int t;
     int i = 0;
 
-	xf86DrvMsg(0, X_INFO, "hwc_translate_cursor\n");
+    xf86DrvMsg(0, X_INFO, "hwc_translate_cursor x: %d, y: %d, width: %d, height: %d, displayW: %d, displayH: %d\n", x, y, cursorWidth, cursorHeight, displayWidth, displayHeight);
 
     #define P(x, y) vertices[i++] = x;  vertices[i++] = y; // Point vertex
     switch (rotation) {
     case HWC_ROTATE_NORMAL:
-        y = h - y - ch - 1;
-
+        y = displayHeight - y;
+        P(x, y - cursorHeight);
+        P(x + cursorWidth, y - cursorHeight);
         P(x, y);
-        P(x + cw, y);
-        P(x, y + ch);
-        P(x + cw, y + ch);
+        P(x + cursorWidth, y);
         break;
     case HWC_ROTATE_CW:
         t = x;
@@ -319,7 +331,7 @@ void hwc_egl_render_cursor(ScreenPtr pScreen, int disp) {
 	}
 	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_render_cursor disp: %d\n", disp);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_render_cursor disp: %d, r: %d\n", disp, display->rotation);
 
     glUseProgram(renderer->projShader.program);
 
@@ -337,7 +349,7 @@ void hwc_egl_render_cursor(ScreenPtr pScreen, int disp) {
     glVertexAttribPointer(renderer->projShader.position, 2, GL_FLOAT, 0, 0, cursorVertices);
     glEnableVertexAttribArray(renderer->projShader.position);
 
-    glVertexAttribPointer(renderer->projShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[display->rotation]);
+    glVertexAttribPointer(renderer->projShader.texcoords, 2, GL_FLOAT, 0, 0, getTextureVerticesForRotation(display->rotation));
     glEnableVertexAttribArray(renderer->projShader.texcoords);
 
     glUniformMatrix4fv(renderer->projShader.transform, 1, GL_FALSE, renderer->projection);
@@ -435,7 +447,7 @@ void hwc_egl_renderer_update(ScreenPtr pScreen, int disp)
 
 //	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 3\n");
 
-	glVertexAttribPointer(renderer->rootShader.texcoords, 2, GL_FLOAT, 0, 0, textureVertices[display->rotation]);
+	glVertexAttribPointer(renderer->rootShader.texcoords, 2, GL_FLOAT, 0, 0, getTextureVerticesForRotation(display->rotation));
     glEnableVertexAttribArray(renderer->rootShader.texcoords);
 
 //	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 4\n");

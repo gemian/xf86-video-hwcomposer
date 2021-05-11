@@ -82,10 +82,10 @@ static const OptionInfoRec Options[] = {
 };
 
 typedef enum {
-    HWC_ROTATE_NORMAL,
-    HWC_ROTATE_CW,
-    HWC_ROTATE_UD,
-    HWC_ROTATE_CCW
+    HWC_ROTATE_NORMAL = RR_Rotate_0, // 1
+    HWC_ROTATE_CW = RR_Rotate_90, // 2
+    HWC_ROTATE_UD = RR_Rotate_180, // 4
+    HWC_ROTATE_CCW = RR_Rotate_270 // 8
 } hwc_rotation;
 
 typedef struct {
@@ -176,11 +176,6 @@ typedef struct HWCRec
     gralloc_module_t *gralloc;
     alloc_device_t *alloc;
     void *libminisf;
-
-//    hwc_composer_device_1_t *hwcDevicePtr;
-//    hwc_display_contents_1_t **hwcContents;
-//    hwc_layer_1_t *fblayer;
-//    uint32_t hwcVersion;
 
     hwc2_compat_device_t* hwc2Device;
 	hwc_display_rec primary_display;

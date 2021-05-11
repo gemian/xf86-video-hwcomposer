@@ -2,6 +2,8 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
+
 #include <xf86.h>
 #include "xf86Crtc.h"
 #include <X11/Xatom.h>
@@ -186,15 +188,19 @@ hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int
 	crtc->mode = *mode;
 	crtc->x = x;
 	crtc->y = y;
-//	crtc->rotation = rotation;
+	crtc->rotation = rotation;
 	int index = (int64_t)crtc->driver_private;
-	xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major index: %d, *ignored* rotation: %d\n", index, rotation);
+	xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major index: %d, rotation: %d\n", index, rotation);
 
-//	if (index == 0) {
-//		hwc->primary_display.rotation = rotation;
-//	} else {
-//		hwc->external_display.rotation = rotation;
-//	}
+	if (index == 0) {
+		char buf[100];
+		hwc->primary_display.rotation = rotation;
+		snprintf(buf, sizeof buf, "echo %d > /sys/devices/platform/touch/screen_rotation", rotation);
+		int ret = system(buf);
+		xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch %d\n", ret);
+	} else {
+		hwc->external_display.rotation = rotation;
+	}
 
 	return TRUE;
 }
@@ -517,6 +523,7 @@ hwc_trigger_redraw(ScrnInfoPtr pScrn, int disp)
 Bool
 hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output)
 {
+    ScreenPtr pScreen = pScrn->pScreen;
     HWCPtr hwc = HWCPTR(pScrn);
 
     // Pick up size from the "Display" subsection if it exists
@@ -525,8 +532,8 @@ hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output
         pScrn->virtualY = pScrn->display->virtualY;
     } else {
         // Pick rotated HWComposer screen resolution
-        pScrn->virtualX = hwc->primary_display.height;
-        pScrn->virtualY = hwc->primary_display.width;
+        pScrn->virtualX = hwc->primary_display.width;
+        pScrn->virtualY = hwc->primary_display.height;
 		xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init primary picked\n");
     }
     pScrn->displayWidth = pScrn->virtualX;
@@ -566,14 +573,17 @@ hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output
 		{
 			if(!xf86NameCmp(s, "CW")) {
 				hwc->primary_display.rotation = HWC_ROTATE_CW;
+				hwc->paCrtcs[i]->rotation = HWC_ROTATE_CW;
 				xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen clockwise\n");
 			}
 			else if(!xf86NameCmp(s, "UD")) {
 				hwc->primary_display.rotation = HWC_ROTATE_UD;
+				hwc->paCrtcs[i]->rotation = HWC_ROTATE_UD;
 				xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen upside-down\n");
 			}
 			else if(!xf86NameCmp(s, "CCW")) {
 				hwc->primary_display.rotation = HWC_ROTATE_CCW;
+				hwc->paCrtcs[i]->rotation = HWC_ROTATE_CCW;
 				xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen counter-clockwise\n");
 			}
 			else {
