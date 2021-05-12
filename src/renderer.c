@@ -228,7 +228,7 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
 
     if (!hwc->glamor && renderer->image == EGL_NO_IMAGE_KHR) {
         renderer->image = hwc->egl_proc.eglCreateImageKHR(hwc->egl_display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_HYBRIS,
-                                            (EGLClientBuffer)hwc->buffer, NULL);
+                                            (EGLClientBuffer)display->buffer, NULL);
 		hwc->egl_proc.glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, renderer->image);
     }
 
@@ -320,18 +320,12 @@ void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int cursorWidth, 
     #undef P
 }
 
-void hwc_egl_render_cursor(ScreenPtr pScreen, int disp) {
+void hwc_egl_render_cursor(ScreenPtr pScreen, hwc_display_ptr display) {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-	hwc_display_ptr display = NULL;
-	if (disp == HWC_DISPLAY_PRIMARY) {
-		display = &hwc->primary_display;
-	} else {
-		display = &hwc->external_display;
-	}
 	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_render_cursor disp: %d, r: %d\n", disp, display->rotation);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_render_cursor disp: %p, r: %d\n", display, display->rotation);
 
     glUseProgram(renderer->projShader.program);
 
@@ -341,9 +335,9 @@ void hwc_egl_render_cursor(ScreenPtr pScreen, int disp) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
 
-    hwc_translate_cursor(display->rotation, hwc->cursorX, hwc->cursorY,
+    hwc_translate_cursor(display->rotation, display->cursorX, display->cursorY,
                          hwc->cursorWidth, hwc->cursorHeight,
-                         pScrn->virtualX, pScrn->virtualY,
+						 display->width, display->height,
                          cursorVertices);
 
     glVertexAttribPointer(renderer->projShader.position, 2, GL_FLOAT, 0, 0, cursorVertices);
@@ -367,6 +361,8 @@ void *hwc_egl_renderer_thread(void *user_data)
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
     bool external_initialised = FALSE;
+    bool primary_dirty = FALSE;
+    bool external_dirty = FALSE;
 
 	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread\n");
 
@@ -375,11 +371,15 @@ void *hwc_egl_renderer_thread(void *user_data)
     while (hwc->rendererIsRunning) {
         pthread_mutex_lock(&(hwc->dirtyLock));
 
-        while (!hwc->dirty) {
+       while (!(hwc->primary_display.dirty || hwc->external_display.dirty)) {
             pthread_cond_wait(&(hwc->dirtyCond), &(hwc->dirtyLock));
         }
 
-        hwc->dirty = FALSE;
+        primary_dirty = hwc->primary_display.dirty;
+        external_dirty = hwc->external_display.dirty;
+        hwc->primary_display.dirty = FALSE;
+        hwc->external_display.dirty = FALSE;
+
         pthread_mutex_unlock(&(hwc->dirtyLock));
 
         if ((hwc->connected_outputs & 2) && !external_initialised) {
@@ -394,10 +394,10 @@ void *hwc_egl_renderer_thread(void *user_data)
                 EGL_SYNC_FLUSH_COMMANDS_BIT_KHR,
                 EGL_FOREVER_KHR);
         }
-		if (hwc->primary_display.dpmsMode == DPMSModeOn)
-			hwc_egl_renderer_update(pScreen, 0);
-		if (hwc->external_display.dpmsMode == DPMSModeOn && external_initialised)
-			hwc_egl_renderer_update(pScreen, 1);
+        if (primary_dirty && hwc->primary_display.dpmsMode == DPMSModeOn)
+            hwc_egl_renderer_update(pScreen, &hwc->primary_display);
+        if (external_dirty && hwc->external_display.dpmsMode == DPMSModeOn && external_initialised)
+            hwc_egl_renderer_update(pScreen, &hwc->primary_display);
         pthread_mutex_unlock(&(hwc->rendererLock));
     }
 
@@ -409,16 +409,10 @@ void *hwc_egl_renderer_thread(void *user_data)
     return NULL;
 }
 
-void hwc_egl_renderer_update(ScreenPtr pScreen, int disp)
+void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display)
 {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
-	hwc_display_ptr display = NULL;
-	if (disp == HWC_DISPLAY_PRIMARY) {
-		display = &hwc->primary_display;
-	} else {
-		display = &hwc->external_display;
-	}
 	hwc_renderer_ptr renderer = &display->hwc_renderer;
 
 //	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, renderer->context);
@@ -461,8 +455,8 @@ void hwc_egl_renderer_update(ScreenPtr pScreen, int disp)
 
 //	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update 6\n");
 
-	if (hwc->cursorShown)
-        hwc_egl_render_cursor(pScreen, disp);
+	if (display->cursorShown)
+        hwc_egl_render_cursor(pScreen, display);
 
     eglSwapBuffers (hwc->egl_display, renderer->surface);  // get the rendered buffer to the screen
 }

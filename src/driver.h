@@ -41,8 +41,7 @@ typedef struct _color
     int blue;
 } dummy_colors;
 
-void hwc_trigger_redraw(ScrnInfoPtr pScrn, int disp);
-Bool hwc_display_pre_init(ScrnInfoPtr pScrn, xf86CrtcPtr *crtc, xf86OutputPtr *output);
+Bool hwc_display_pre_init(ScrnInfoPtr pScrn);
 Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn);
 Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn);
 void hwc_hwcomposer_close(ScrnInfoPtr pScrn);
@@ -58,7 +57,6 @@ void hwc_egl_renderer_close(ScrnInfoPtr pScrn);
 void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp);
 void hwc_egl_renderer_screen_close(ScreenPtr pScreen, int disp);
 void *hwc_egl_renderer_thread(void *user_data);
-void hwc_egl_renderer_update(ScreenPtr pScreen, int disp);
 
 void hwc_ortho_2d(float* mat, float left, float right, float bottom, float top);
 GLuint hwc_link_program(const GLchar *vert_src, const GLchar *frag_src);
@@ -128,6 +126,15 @@ typedef struct {
 	int height;
 	hwc_rotation rotation;
 
+	EGLClientBuffer buffer;
+	int stride;
+	DamagePtr damage;
+	Bool dirty;
+
+	Bool cursorShown;
+	int cursorX;
+	int cursorY;
+
 	hwc_renderer_rec hwc_renderer;
 	uint32_t hwcVersion;
 
@@ -142,8 +149,10 @@ typedef struct {
 	int lastPresentFence;
 } hwc_display_rec, *hwc_display_ptr;
 
+void hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
 struct ANativeWindow *hwc_get_native_window(hwc_display_ptr hwc_display);
+void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display);
 
 typedef struct HWCRec
 {
@@ -168,8 +177,6 @@ typedef struct HWCRec
     int connected_outputs;
     /* XRANDR support end */
 
-    DamagePtr damage;
-    Bool dirty;
     Bool glamor;
     Bool drihybris;
 
@@ -183,13 +190,7 @@ typedef struct HWCRec
 
 	hwc2_display_t external_display_id;
 
-    EGLClientBuffer buffer;
-    int stride;
-
-    Bool cursorShown;
     xf86CursorInfoPtr cursorInfo;
-    int cursorX;
-    int cursorY;
     int cursorWidth;
     int cursorHeight;
 	GLuint cursorTexture;
