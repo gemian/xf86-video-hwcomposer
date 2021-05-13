@@ -150,9 +150,12 @@ typedef struct {
 } hwc_display_rec, *hwc_display_ptr;
 
 void hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
+Bool hwc_egl_renderer_tidy(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
 struct ANativeWindow *hwc_get_native_window(hwc_display_ptr hwc_display);
 void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display);
+PixmapPtr dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height);
+void dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data);
 
 typedef struct HWCRec
 {
@@ -177,8 +180,11 @@ typedef struct HWCRec
     int connected_outputs;
     /* XRANDR support end */
 
+	DamagePtr damage;
+	Bool dirty;
     Bool glamor;
     Bool drihybris;
+    Bool wasTidied;
 
     gralloc_module_t *gralloc;
     alloc_device_t *alloc;
@@ -189,6 +195,9 @@ typedef struct HWCRec
 	hwc_display_rec external_display;
 
 	hwc2_display_t external_display_id;
+
+    EGLClientBuffer buffer;
+    int stride;
 
     xf86CursorInfoPtr cursorInfo;
     int cursorWidth;

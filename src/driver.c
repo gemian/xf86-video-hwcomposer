@@ -441,8 +441,7 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 
     hwc->swCursor = xf86ReturnOptValBool(hwc->Options, OPTION_SW_CURSOR, FALSE);
     if (hwc->swCursor) {
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-                    "hardware cursor disabled\n");
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hardware cursor disabled\n");
     }
 
     hwc_set_egl_platform(pScrn);
@@ -480,10 +479,16 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     pScrn->memPhysBase = 0;
     pScrn->fbOffset = 0;
 
-    pScrn->xDpi = 403;
-    pScrn->yDpi = 403;
-    pScrn->virtualX = pScrn->displayWidth = hwc->primary_display.width;
-    pScrn->virtualY = hwc->primary_display.height;
+    xf86SetDpi(pScrn, 0, 0);
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "setting virtual sizes and dpi\n");
+//    pScrn->xDpi = 192;
+//    pScrn->yDpi = 192;
+//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
+//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
+//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->paOutputs[0]->initial_rotation);
+//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->paOutputs[0]->initial_rotation);
+//    pScrn->virtualX = pScrn->displayWidth = hwc->primary_display.width;
+//    pScrn->virtualY = hwc->primary_display.height;
 
     accel_method_str = xf86GetOptValString(hwc->Options, OPTION_ACCEL_METHOD);
     do_glamor = (!accel_method_str ||
@@ -531,6 +536,9 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 			}
 		}
 	}
+
+//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
+//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
 
 	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "PreInit finished\n");
 
@@ -645,6 +653,64 @@ CreateScreenResources(ScreenPtr pScreen)
     pScreen->CreateScreenResources = hwc->CreateScreenResources;
     ret = pScreen->CreateScreenResources(pScreen);
     pScreen->CreateScreenResources = CreateScreenResources;
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "upstream created\n");
+
+    xf86CrtcPtr crtc = hwc->paCrtcs[0];
+//    dummy_crtc_shadow_destroy(crtc, pScreen->GetScreenPixmap(pScreen), NULL);
+    dummy_crtc_shadow_create(crtc, NULL, hwc->primary_display.width, hwc->primary_display.height);
+
+//    if (!hwc->glamor) {
+//        rootPixmap = pScreen->GetScreenPixmap(pScreen);
+//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "created non-glamour root pixmap\n");
+//    } else {
+//#ifdef ENABLE_GLAMOR
+//        rootPixmap = glamor_create_pixmap(pScreen,
+//                                          pScreen->width,
+//                                          pScreen->height,
+//                                          pScreen->rootDepth,
+//                                          GLAMOR_CREATE_NO_LARGE);
+//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "created glamor root pixmap\n");
+//#endif
+//    }
+//
+//    err = hwc->egl_proc.eglHybrisCreateNativeBuffer(pScreen->width, pScreen->height,
+//                                                        HYBRIS_USAGE_HW_TEXTURE |
+//                                                        HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
+//                                                        HYBRIS_PIXEL_FORMAT_RGBA_8888,
+//                                                        &hwc->stride, &hwc->buffer);
+//
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "alloc: status=%d, stride=%d\n", err, hwc->stride);
+//
+//    if (hwc->glamor) {
+//#ifdef ENABLE_GLAMOR
+////        hwc->hwc_renderer.rootTexture = glamor_get_pixmap_texture(rootPixmap);
+//#endif
+//    }
+//
+//    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc->buffer,
+//                                                  HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
+//                                                  0, 0, hwc->stride, pScreen->height, &pixels);
+//
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "gralloc lock returns %i, lock to vaddr %p, index: %d\n", err, pixels,
+//               index);
+//
+//    if (!hwc->glamor) {
+//        if (!pScrn->pScreen->ModifyPixmapHeader(rootPixmap, -1, -1, -1, -1, hwc->stride * 4, pixels)) {
+//            FatalError("Couldn't adjust screen root pixmap, index: %d\n", index);
+//        }
+//    }
+//
+//    hwc->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, rootPixmap);
+//
+//    if (hwc->damage) {
+//        DamageRegister(&rootPixmap->drawable, hwc->damage);
+//        hwc->dirty = FALSE;
+//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking initialized\n");
+//    } else {
+//        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create screen damage record\n");
+//        return FALSE;
+//    }
 
     hwc->rendererIsRunning = 1;
 
@@ -793,6 +859,10 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
         return FALSE;
     }
 
+//    pScrn->virtualX = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
+//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
+//    hwc_set_mode_major(hwc->paCrtcs[0], pScrn->modes, HWC_ROTATE_CCW, pScrn->virtualX, pScrn->virtualY);
+
     /* Initialise default colourmap */
     if(!miCreateDefColormap(pScreen))
         return FALSE;
@@ -887,6 +957,12 @@ CloseScreen(CLOSE_SCREEN_ARGS_DECL)
 
     TimerCancel(hwc->timer);
 
+    if (hwc->damage) {
+        DamageUnregister(hwc->damage);
+        DamageDestroy(hwc->damage);
+        hwc->damage = NULL;
+    }
+
     hwc->rendererIsRunning = 0;
 	hwc_trigger_redraw(pScrn, &hwc->primary_display);
 
@@ -894,6 +970,12 @@ CloseScreen(CLOSE_SCREEN_ARGS_DECL)
     pthread_mutex_destroy(&(hwc->rendererLock));
     pthread_mutex_destroy(&(hwc->dirtyLock));
     pthread_cond_destroy(&(hwc->dirtyCond));
+
+    if (hwc->buffer != NULL) {
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->buffer);
+        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->buffer);
+        hwc->buffer = NULL;
+    }
 
     if (hwc->CursorInfo)
         xf86DestroyCursorInfoRec(hwc->CursorInfo);
