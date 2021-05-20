@@ -462,6 +462,8 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 
 	hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
 
+    xf86SetDpi(pScrn, 0, 0);
+
 #ifndef __ANDROID__
     if (xf86LoadSubModule(pScrn, "fb") == NULL) {
         RETURN;
@@ -478,17 +480,6 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     /* We have no contiguous physical fb in physical memory */
     pScrn->memPhysBase = 0;
     pScrn->fbOffset = 0;
-
-    xf86SetDpi(pScrn, 0, 0);
-//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "setting virtual sizes and dpi\n");
-//    pScrn->xDpi = 192;
-//    pScrn->yDpi = 192;
-//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
-//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->paOutputs[0]->initial_rotation);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->paOutputs[0]->initial_rotation);
-//    pScrn->virtualX = pScrn->displayWidth = hwc->primary_display.width;
-//    pScrn->virtualY = hwc->primary_display.height;
 
     accel_method_str = xf86GetOptValString(hwc->Options, OPTION_ACCEL_METHOD);
     do_glamor = (!accel_method_str ||
@@ -537,12 +528,8 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 		}
 	}
 
-//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
-
 	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "PreInit finished\n");
 
-//	xfree(entityInfoPtr);
     return TRUE;
 }
 #undef RETURN
@@ -595,8 +582,22 @@ LoadPalette(
    }
 }
 
+void triggerGlamourEglFlush(HWCPtr hwc) {
+    /* create EGL sync object so renderer thread could wait for
+     * glamor to flush commands pipeline
+     * (just glFlush which is called in glamor's blockHandler
+     * is not enough on Mali to get the buffer updated) */
+    if (hwc->egl_fence != EGL_NO_SYNC_KHR) {
+        EGLSyncKHR fence = hwc->egl_fence;
+        hwc->egl_fence = EGL_NO_SYNC_KHR;
+        eglDestroySyncKHR(hwc->egl_display, fence);
+    }
+    hwc->egl_fence = eglCreateSyncKHR(hwc->egl_display, EGL_SYNC_FENCE_KHR, NULL);
+    /* make sure created sync object eventually signals */
+    glFlush();
+}
 
-static void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
+void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
 	HWCPtr hwc = HWCPTR(pScrn);
 
 	if (hwc_display->damage && hwc_display->dpmsMode == DPMSModeOn) {
@@ -606,18 +607,7 @@ static void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_d
         if (num_cliprects) {
             DamageEmpty(hwc_display->damage);
             if (hwc->glamor) {
-                /* create EGL sync object so renderer thread could wait for
-                 * glamor to flush commands pipeline */
-                /* (just glFlush which is called in glamor's blockHandler
-                   is not enough on Mali to get the buffer updated) */
-                if (hwc->egl_fence != EGL_NO_SYNC_KHR) {
-                    EGLSyncKHR fence = hwc->egl_fence;
-					hwc->egl_fence = EGL_NO_SYNC_KHR;
-                    eglDestroySyncKHR(hwc->egl_display, fence);
-                }
-				hwc->egl_fence = eglCreateSyncKHR(hwc->egl_display, EGL_SYNC_FENCE_KHR, NULL);
-                /* make sure created sync object eventually signals */
-                glFlush();
+                triggerGlamourEglFlush(hwc);
             }
             hwc_trigger_redraw(pScrn, hwc_display);
         }
@@ -627,8 +617,6 @@ static void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_d
 static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
 	ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
 	HWCPtr hwc = HWCPTR(pScrn);
-
-	//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler\n");
 
 	pScreen->BlockHandler = hwc->BlockHandler;
 	pScreen->BlockHandler(pScreen, timeout);
@@ -654,63 +642,9 @@ CreateScreenResources(ScreenPtr pScreen)
     ret = pScreen->CreateScreenResources(pScreen);
     pScreen->CreateScreenResources = CreateScreenResources;
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "upstream created\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "upstream created - ret %d\n", ret);
 
-    xf86CrtcPtr crtc = hwc->paCrtcs[0];
-//    dummy_crtc_shadow_destroy(crtc, pScreen->GetScreenPixmap(pScreen), NULL);
-    dummy_crtc_shadow_create(crtc, NULL, hwc->primary_display.width, hwc->primary_display.height);
-
-//    if (!hwc->glamor) {
-//        rootPixmap = pScreen->GetScreenPixmap(pScreen);
-//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "created non-glamour root pixmap\n");
-//    } else {
-//#ifdef ENABLE_GLAMOR
-//        rootPixmap = glamor_create_pixmap(pScreen,
-//                                          pScreen->width,
-//                                          pScreen->height,
-//                                          pScreen->rootDepth,
-//                                          GLAMOR_CREATE_NO_LARGE);
-//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "created glamor root pixmap\n");
-//#endif
-//    }
-//
-//    err = hwc->egl_proc.eglHybrisCreateNativeBuffer(pScreen->width, pScreen->height,
-//                                                        HYBRIS_USAGE_HW_TEXTURE |
-//                                                        HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
-//                                                        HYBRIS_PIXEL_FORMAT_RGBA_8888,
-//                                                        &hwc->stride, &hwc->buffer);
-//
-//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "alloc: status=%d, stride=%d\n", err, hwc->stride);
-//
-//    if (hwc->glamor) {
-//#ifdef ENABLE_GLAMOR
-////        hwc->hwc_renderer.rootTexture = glamor_get_pixmap_texture(rootPixmap);
-//#endif
-//    }
-//
-//    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc->buffer,
-//                                                  HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
-//                                                  0, 0, hwc->stride, pScreen->height, &pixels);
-//
-//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "gralloc lock returns %i, lock to vaddr %p, index: %d\n", err, pixels,
-//               index);
-//
-//    if (!hwc->glamor) {
-//        if (!pScrn->pScreen->ModifyPixmapHeader(rootPixmap, -1, -1, -1, -1, hwc->stride * 4, pixels)) {
-//            FatalError("Couldn't adjust screen root pixmap, index: %d\n", index);
-//        }
-//    }
-//
-//    hwc->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, rootPixmap);
-//
-//    if (hwc->damage) {
-//        DamageRegister(&rootPixmap->drawable, hwc->damage);
-//        hwc->dirty = FALSE;
-//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking initialized\n");
-//    } else {
-//        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create screen damage record\n");
-//        return FALSE;
-//    }
+    get_crtc_pixmap(&hwc->primary_display);
 
     hwc->rendererIsRunning = 1;
 
@@ -728,6 +662,7 @@ static void checkDirtyAndRenderUpdate(ScrnInfoPtr pScrn, hwc_display_ptr hwc_dis
     HWCPtr hwc = HWCPTR(pScrn);
     PixmapPtr rootPixmap;
     int err;
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "checkDirtyAndRenderUpdate dirty: %d, dpms: %d\n", hwc_display->dirty, hwc_display->dpmsMode);
 
     if (hwc_display->dirty && hwc_display->dpmsMode == DPMSModeOn) {
         void *pixels = NULL;
@@ -831,7 +766,9 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
 
 	xf86SetBlackWhitePixels(pScreen);
 
-	pScreen->SaveScreen = SaveScreen;
+    hwc->CreateScreenResources = pScreen->CreateScreenResources;
+    pScreen->CreateScreenResources = CreateScreenResources;
+
 
     xf86SetBackingStore(pScreen);
     xf86SetSilkenMouse(pScreen);
@@ -849,20 +786,6 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
                           HARDWARE_CURSOR_ARGB);
     }
 
-    // Initialise randr 1.2 mode-setting functions and set first mode.
-    // Note that the mode won't be usable until the server has resized the
-    // framebuffer to something reasonable.
-    if (!xf86CrtcScreenInit(pScreen)) {
-        return FALSE;
-    }
-    if (!xf86SetDesiredModes(pScrn)) {
-        return FALSE;
-    }
-
-//    pScrn->virtualX = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
-//    hwc_set_mode_major(hwc->paCrtcs[0], pScrn->modes, HWC_ROTATE_CCW, pScrn->virtualX, pScrn->virtualY);
-
     /* Initialise default colourmap */
     if(!miCreateDefColormap(pScreen))
         return FALSE;
@@ -873,6 +796,22 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
                              | CMAP_RELOAD_ON_MODE_SWITCH))
         return FALSE;
 
+    // Initialise randr 1.2 mode-setting functions and set first mode.
+    // Note that the mode won't be usable until the server has resized the
+    // framebuffer to something reasonable.
+    if (!xf86CrtcScreenInit(pScreen)) {
+        return FALSE;
+    }
+    if (!xf86SetDesiredModes(pScrn)) {
+        return FALSE;
+    }
+
+	pScreen->SaveScreen = SaveScreen;
+	
+    /* Wrap the current CloseScreen function */
+    hwc->CloseScreen = pScreen->CloseScreen;
+    pScreen->CloseScreen = CloseScreen;
+	
     xf86DPMSInit(pScreen, xf86DPMSSet, 0);
     hwc->primary_display.dpmsMode = DPMSModeOn; //TODO Should we really check first? - based upon device open/closed status?
 
@@ -892,19 +831,16 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
         hwc_pixmap_init(pScreen);
     }
 
-//    xf86OutputPtr compat_output = xf86CompatOutput(pScrn);
-//    if (compat_output && compat_output->conf_monitor) {
-//        compat_output->conf_monitor->mon_width = 136;
-//        compat_output->conf_monitor->mon_height = 68;
-//        xf86DrvMsg(pScrn->scrnIndex, X_INFO,"set conf_monitor mm sizes\n");
-//    }
-
     /* Report any unused options (only for the first generation) */
     if (serverGeneration == 1) {
         xf86ShowUnusedOptions(pScrn->scrnIndex, pScrn->options);
     }
+	
+    /* Wrap the current BlockHandler function */
+    hwc->BlockHandler = pScreen->BlockHandler;
+    pScreen->BlockHandler = hwcBlockHandler;
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit End - randr_crtc: %d\n",hwc->paCrtcs[0]->randr_crtc->rotations);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit End - randr_crtc: %d\n",hwc->primary_display.pCrtc->randr_crtc->rotations);
 
 #ifdef ENABLE_DRIHYBRIS
     if (hwc->drihybris) {
@@ -916,16 +852,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
                     "Failed to initialize the Present extension.\n");
     }
 
-    /* Wrap the current BlockHandler function */
-    hwc->BlockHandler = pScreen->BlockHandler;
-    pScreen->BlockHandler = hwcBlockHandler;
 
-    /* Wrap the current CloseScreen function */
-    hwc->CloseScreen = pScreen->CloseScreen;
-    pScreen->CloseScreen = CloseScreen;
-
-    hwc->CreateScreenResources = pScreen->CreateScreenResources;
-    pScreen->CreateScreenResources = CreateScreenResources;
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit End\n");
     return TRUE;

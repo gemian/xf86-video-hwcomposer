@@ -63,10 +63,12 @@ Bool DUMMYAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
     uint64_t cbLine = (width * xf86GetBppFromDepth(pScrn, pScrn->depth) / 8 + 3) & ~3;
     int displayWidth = cbLine * 8 / xf86GetBppFromDepth(pScrn, pScrn->depth);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap in X: %d, Y: %d, dW: %d\n", pScrn->virtualX,
-               pScrn->virtualY, pScrn->displayWidth);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap target X: %d, Y: %d, dW: %d\n", width,
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap in X: %d, Y: %d, dW: %d, rotation: %d\n", pScrn->virtualX,
+               pScrn->virtualY, pScrn->displayWidth, hwc_display->pCrtc->rotation);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap target W: %d, H: %d, dW: %d\n", width,
                height, displayWidth);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap screen w: %d, h: %d, cBx1: %d, cBy1: %d, cBx2: %d, cBy2: %d\n",
+               pScreen->width, pScreen->height, hwc_display->pCrtc->bounds.x1, hwc_display->pCrtc->bounds.y1, hwc_display->pCrtc->bounds.x2, hwc_display->pCrtc->bounds.y2);
 
     if (width == pScrn->virtualX && height == pScrn->virtualY && displayWidth == pScrn->displayWidth) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap no change\n");
@@ -78,13 +80,14 @@ Bool DUMMYAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
         return FALSE;
     }
 
+    pthread_mutex_lock(&(hwc->rendererLock));
     pthread_mutex_lock(&(hwc->dirtyLock));
 
-    if (hwc_display->damage) {
-        DamageUnregister(hwc_display->damage);
-        DamageDestroy(hwc_display->damage);
-        hwc_display->damage = NULL;
-    }
+//    if (hwc_display->damage) {
+//        DamageUnregister(hwc_display->damage);
+//        DamageDestroy(hwc_display->damage);
+//        hwc_display->damage = NULL;
+//    }
 
     if (hwc_display->buffer != NULL) {
         hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc_display->buffer);
@@ -105,7 +108,7 @@ Bool DUMMYAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
                                                         HYBRIS_PIXEL_FORMAT_RGBA_8888,
                                                         &hwc_display->stride, &hwc_display->buffer);
 
-    if (hwc->glamor) {
+    if (hwc->glamor && !hwc_display->hwc_renderer.rootTexture) {
 #ifdef ENABLE_GLAMOR
         hwc_display->hwc_renderer.rootTexture = glamor_get_pixmap_texture(pPixmap);
 #endif
@@ -115,46 +118,23 @@ Bool DUMMYAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
                                                   HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
                                                   0, 0, hwc_display->stride, height, &pixels);
 
-    hwc_display->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, pPixmap);
-
-    if (hwc_display->damage) {
+    if (!hwc_display->damage) {
+        hwc_display->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, pPixmap);
         DamageRegister(&pPixmap->drawable, hwc_display->damage);
         hwc_display->dirty = FALSE;
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking initialized\n");
-    } else {
+    }
+
+    if (!hwc_display->damage) {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create screen damage record\n");
         return FALSE;
     }
 
-    if (!hwc_egl_renderer_tidy(pScrn, &hwc->primary_display)) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to tidyup primary EGL renderer\n");
-        return FALSE;
-    }
-
-    const char *accel_method_str = xf86GetOptValString(hwc->Options, OPTION_ACCEL_METHOD);
-    Bool do_glamor = (!accel_method_str ||
-                 strcmp(accel_method_str, "glamor") == 0);
-
-    if (!hwc_egl_renderer_init(pScrn, &hwc->primary_display, do_glamor)) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to initialize primary EGL renderer\n");
-        return FALSE;
-    }
-
-//    pScrn->virtualX = pScrn->displayWidth = xf86ModeWidth(pScrn->modes, hwc->primary_display.rotation);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, hwc->primary_display.rotation);
-//    hwc_set_mode_major(hwc->paCrtcs[0], pScrn->modes, HWC_ROTATE_CCW, pScrn->virtualX, pScrn->virtualY);
-
-//    xf86CrtcConfigPtr xf86_config = XF86_CRTC_CONFIG_PTR(pScrn);
-//    for (int i = 0; i < xf86_config->num_crtc; i++) {
-//        xf86CrtcPtr crtc = xf86_config->crtc[i];
-//
-//        if (!crtc->enabled)
-//            continue;
-//
-//        hwc_set_mode_major(crtc, &crtc->mode, crtc->rotation, crtc->x, crtc->y);
-//    }
+    hwc->wasRotated = TRUE;
 
     pthread_mutex_unlock(&(hwc->dirtyLock));
+    pthread_mutex_unlock(&(hwc->rendererLock));
+    hwc_trigger_redraw(pScrn, hwc_display);
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "DUMMYAdjustScreenPixmap out X: %d, Y: %d, dW: %d\n", pScrn->virtualX,
                pScrn->virtualY, pScrn->displayWidth);
@@ -164,7 +144,8 @@ Bool DUMMYAdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
 
 static Bool
 hwc_xf86crtc_resize(ScrnInfoPtr pScrn, int cw, int ch) {
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_xf86crtc_resize cw: %d, ch: %d\n", cw, ch);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_xf86crtc_resize cw: %d, ch: %d, xDpi: %d, yDpi: %d\n", cw, ch,
+               pScrn->xDpi, pScrn->yDpi);
     if (!pScrn->vtSema) {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                    "We do not own the active VT, exiting.\n");
@@ -172,9 +153,25 @@ hwc_xf86crtc_resize(ScrnInfoPtr pScrn, int cw, int ch) {
     }
     return DUMMYAdjustScreenPixmap(pScrn, cw, ch);
 }
+//
+//static int
+//hwc_xf86crtc_create_lease(RRLeasePtr lease, int *fd) {
+//    xf86CrtcLeaseStarted(lease);
+//
+//    *fd = NULL;
+//    return Success;
+//
+//}
+//
+//static void
+//hwc_xf86crtc_terminate_lease(RRLeasePtr lease) {
+//    xf86CrtcLeaseTerminated(lease);
+//}
 
 static const xf86CrtcConfigFuncsRec hwc_xf86crtc_config_funcs = {
-        .resize = hwc_xf86crtc_resize
+        .resize = hwc_xf86crtc_resize,
+//        .create_lease = hwc_xf86crtc_create_lease,
+//        .terminate_lease = hwc_xf86crtc_terminate_lease
 };
 
 static void
@@ -260,6 +257,22 @@ dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height) {
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "dummy_crtc_shadow_create width: %d, height: %d, index: %d\n", width,
                height, index);
 
+    return NULL;
+}
+
+PixmapPtr
+get_crtc_pixmap(hwc_display_ptr hwc_display) {
+    PixmapPtr crtcPixmap;
+    void *pixels = NULL;
+    xf86CrtcPtr crtc = hwc_display->pCrtc;
+    HWCPtr hwc = HWCPTR(crtc->scrn);
+    int index = (int64_t) crtc->driver_private;
+    int width = xf86ModeWidth(&crtc->mode, crtc->rotation);
+    int height = xf86ModeHeight(&crtc->mode, crtc->rotation);
+
+    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "get_crtc_pixmap width: %d, height: %d, index: %d\n", width,
+               height, index);
+
     crtcPixmap = crtc->scrn->pScreen->GetScreenPixmap(crtc->scrn->pScreen);
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "got pixmap: %p, index: %d\n", crtcPixmap, index);
 
@@ -332,6 +345,11 @@ dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data) {
 
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "dummy_crtc_shadow_destroy pPixmap: %p, data: %p, index: %d\n", pPixmap,
                data, index);
+}
+
+void
+crtc_pixmap_destroy(hwc_display_ptr hwc_display, PixmapPtr pPixmap) {
+    HWCPtr hwc = HWCPTR(hwc_display->pCrtc->scrn);
 
     if (pPixmap) {
         pPixmap->drawable.pScreen->DestroyPixmap(pPixmap);
@@ -348,7 +366,6 @@ dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data) {
         hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc_display->buffer);
         hwc_display->buffer = NULL;
     }
-
 }
 
 static void
@@ -361,31 +378,38 @@ dummy_crtc_mode_set(xf86CrtcPtr crtc, DisplayModePtr mode,
                index);
 }
 
+static void
+hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode);
+
 Bool
 hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int x, int y) {
     HWCPtr hwc = HWCPTR(crtc->scrn);
-//    x = xf86ModeWidth(mode, rotation);
-//    y = xf86ModeHeight(mode, rotation);
-//    crtc->desiredMode = *mode;
-//    crtc->desiredX = x;
-//    crtc->desiredY = y;
-//    crtc->desiredRotation = rotation;
-//    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major before x: %d, y: %d, rotation: %d\n", crtc->x, crtc->y, crtc->rotation);
-//    crtc->mode = *mode;
-//    crtc->x = x;
-//    crtc->y = y;
-//    crtc->rotation = rotation;
+    crtc->mode = *mode;
+    crtc->x = x;
+    crtc->y = y;
+    crtc->rotation = rotation;
     int index = (int64_t) crtc->driver_private;
-    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major as setting x: %d, y: %d, rotation: %d index: %d\n", x, y, rotation, index);
-
-    if (index == 0) {
-        char buf[100];
-        hwc->primary_display.rotation = rotation;
-        snprintf(buf, sizeof buf, "echo %d > /sys/devices/platform/touch/screen_rotation", rotation);
-        int ret = system(buf);
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch %d\n", ret);
+    hwc_display_ptr hwc_display;
+    if (index == HWC_DISPLAY_PRIMARY) {
+        hwc_display = &hwc->primary_display;
     } else {
-        hwc->external_display.rotation = rotation;
+        hwc_display = &hwc->external_display;
+    }
+    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major as setting x: %d, y: %d, rotation: %d, initialR: %d, driverIsPerformingTransform: %d, index: %d\n", x, y, rotation, hwc_display->pOutput->initial_rotation, crtc->driverIsPerformingTransform, index);
+
+    if (hwc_display->rotationOnFirstSetMode) {
+        crtc->rotation = hwc_display->pOutput->initial_rotation;
+        hwc_display->rotationOnFirstSetMode = FALSE;
+    }
+    if (index == HWC_DISPLAY_PRIMARY) {
+        char buf[100];
+        snprintf(buf, sizeof buf, "echo %d > /sys/devices/platform/touch/screen_rotation", crtc->rotation);
+        int ret = system(buf);
+        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch rotation ret: %d\n", ret);
+
+        if (hwc_display->dpmsMode != DPMSModeOn) {
+            hwc_output_set_mode(crtc->scrn, hwc_display, index, DPMSModeOn);
+        }
     }
 
     return TRUE;
@@ -489,7 +513,8 @@ static const xf86CrtcFuncsRec hwcomposer_crtc_funcs = {
 //	.prepare = dummy_crtc_prepare,
 //	.mode_set = dummy_crtc_mode_set,
 //	.commit = dummy_crtc_commit,
-        .gamma_set = dummy_crtc_gamma_set,
+// .set_origin?
+//        .gamma_set = dummy_crtc_gamma_set,
         .shadow_allocate = dummy_crtc_shadow_allocate,
         .shadow_create = dummy_crtc_shadow_create,
         .shadow_destroy = dummy_crtc_shadow_destroy,
@@ -526,6 +551,7 @@ xf86CrtcPtr
 dummy_output_get_crtc(xf86OutputPtr output) {
     int index = (int64_t) output->driver_private;
     xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "dummy_output_get_crtc index: %d\n", index);
+    return NULL;//output->crtc;
 }
 
 static void
@@ -557,15 +583,27 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
         pthread_mutex_unlock(&(hwc->dirtyLock));
     }
 
+    hwc_output_set_mode(pScrn, hwc_display, index, mode);
+}
+
+static void
+hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode) {
+    HWCPtr hwc = HWCPTR(pScrn);
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_output_set_mode mode: %d, index: %d\n", mode, index);
+
+    hwc_display->dpmsMode = mode;
+
     pthread_mutex_lock(&(hwc->rendererLock));
     hwc_set_power_mode(pScrn, index, (mode == DPMSModeOn) ? 1 : 0);
     pthread_mutex_unlock(&(hwc->rendererLock));
 
     hwc_toggle_screen_brightness(pScrn);
 
-    if (mode == DPMSModeOn)
+    if (mode == DPMSModeOn) {
         // Force redraw after unblank
         hwc_trigger_redraw(pScrn, hwc_display);
+    }
 }
 
 static int
@@ -595,6 +633,7 @@ dummy_output_mode_set(xf86OutputPtr output, DisplayModePtr mode,
 
     /* set to connected at first mode set */
     hwc->connected_outputs |= 1 << index;
+    xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "dummy_output_mode_set - connected_outputs: %d\n", hwc->connected_outputs);
 }
 
 /* The first virtual monitor is always connected. Others only after setting its
@@ -706,7 +745,7 @@ static const xf86OutputFuncsRec hwcomposer_output_funcs = {
         .set_property = dummy_output_set_property,
 #endif
 #ifdef RANDR_GET_CRTC_INTERFACE
-        .get_crtc = dummy_output_get_crtc,
+//        .get_crtc = dummy_output_get_crtc,
 #endif
         .destroy = dummy_output_destroy
 };
@@ -714,12 +753,43 @@ static const xf86OutputFuncsRec hwcomposer_output_funcs = {
 void
 hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
     HWCPtr hwc = HWCPTR(pScrn);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw index: %p\n", hwc_display);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw display: %p, dirty: %d\n", hwc_display, hwc_display->dirty);
+
+    if (hwc_display->dirty)
+        return;
 
     pthread_mutex_lock(&(hwc->dirtyLock));
     hwc_display->dirty = TRUE;
     pthread_cond_signal(&(hwc->dirtyCond));
     pthread_mutex_unlock(&(hwc->dirtyLock));
+}
+
+static int
+option_to_rotation(ScrnInfoPtr pScrn, OptionInfoPtr options, int rotateType) {
+    hwc_rotation ret;
+    const char *s;
+
+    if (s = xf86GetOptValString(options, rotateType)) {
+        if (!xf86NameCmp(s, "normal")) {
+            ret = HWC_ROTATE_NORMAL;
+        } else if (!xf86NameCmp(s, "left")) {
+            ret = HWC_ROTATE_CW;
+            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen clockwise\n");
+        } else if (!xf86NameCmp(s, "inverted")) {
+            ret = HWC_ROTATE_UD;
+            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen upside-down\n");
+        } else if (!xf86NameCmp(s, "right") || !xf86NameCmp(s, "CCW")) {
+            ret = HWC_ROTATE_CCW;
+            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen counter-clockwise\n");
+        } else {
+            ret = 0;
+            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
+                       "\"%s\" is not a valid value for Option \"Primary|ExternalRotate\"\n", s);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+                       "valid options are \"normal\", \"right\", \"inverted\", \"left\"\n");
+        }
+    }
+    return ret;
 }
 
 Bool
@@ -731,67 +801,49 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
     xf86CrtcConfigInit(pScrn, &hwc_xf86crtc_config_funcs);
     xf86CrtcSetSizeRange(pScrn, 8, 8, SHRT_MAX, SHRT_MAX);
 
+//    xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(scrn);
+//    config->num_output = num->num_crtc = HWC_MAX_SCREENS;
     hwc->num_screens = HWC_MAX_SCREENS;
 
     for (int i = 0; i < hwc->num_screens; i++) {
         char szOutput[256];
 
-        hwc->paCrtcs[i] = xf86CrtcCreate(pScrn, &hwcomposer_crtc_funcs);
-        hwc->paCrtcs[i]->driver_private = (void *) (uintptr_t) i;
+        xf86CrtcPtr crtcPtr = xf86CrtcCreate(pScrn, &hwcomposer_crtc_funcs);
+        crtcPtr->driver_private = (void *) (uintptr_t) i;
+        crtcPtr->driverIsPerformingTransform = XF86DriverTransformOutput+XF86DriverTransformCursorImage+XF86DriverTransformCursorPosition;
 
         snprintf(szOutput, sizeof(szOutput), "Screen%u", i);
-        hwc->paOutputs[i] = xf86OutputCreate(pScrn, &hwcomposer_output_funcs, szOutput);
-
-        xf86OutputUseScreenMonitor(hwc->paOutputs[i], (i == 0));
-        hwc->paOutputs[i]->possible_crtcs = 1 << i;
-        hwc->paOutputs[i]->possible_clones = 0;
-        hwc->paOutputs[i]->driver_private = (void *) (uintptr_t) i;
+        xf86OutputPtr outputPtr = xf86OutputCreate(pScrn, &hwcomposer_output_funcs, szOutput);
+        outputPtr->possible_crtcs = 1 << i;
+//        outputPtr->crtc = crtcPtr;
+        outputPtr->possible_clones = 0;
+        outputPtr->driver_private = (void *) (uintptr_t) i;
 
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Created crtc (%p) and output %s (%p)\n",
-                   (void *) hwc->paCrtcs[i], szOutput,
-                   (void *) hwc->paOutputs[i]);
+                   (void *) crtcPtr, szOutput,
+                   (void *) outputPtr);
 
-        const char *s;
-        if (i == 0 && (s = xf86GetOptValString(hwc->Options, OPTION_ROTATE))) {
-            if (!xf86NameCmp(s, "right")) {
-                hwc->primary_display.rotation = HWC_ROTATE_CW;
-                hwc->paCrtcs[i]->desiredRotation = HWC_ROTATE_CW;
-                xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen clockwise\n");
-            } else if (!xf86NameCmp(s, "inverted")) {
-                hwc->primary_display.rotation = HWC_ROTATE_UD;
-                hwc->paCrtcs[i]->desiredRotation = HWC_ROTATE_UD;
-                xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen upside-down\n");
-            } else if (!xf86NameCmp(s, "left")) {
-                hwc->primary_display.rotation = HWC_ROTATE_CCW;
-                hwc->paCrtcs[i]->desiredRotation = HWC_ROTATE_CCW;
-//                hwc->paOutputs[i]->initial_rotation = HWC_ROTATE_CCW;
-//                hwc->paOutputs[i]->initial_x = hwc->primary_display.height;
-//                hwc->paOutputs[i]->initial_y = hwc->primary_display.width;
-                xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating screen counter-clockwise\n");
-            } else {
-                xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
-                           "\"%s\" is not a valid value for Option \"Rotate\"\n", s);
-                xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-                           "valid options are \"right\", \"inverted\", \"left\"\n");
-            }
+        if (i == 0) {
+            xf86OutputUseScreenMonitor(outputPtr, TRUE);
+            hwc->primary_display.pCrtc = crtcPtr;
+            hwc->primary_display.pOutput = outputPtr;
+            hwc->primary_display.rotationOnFirstSetMode = TRUE;// option_to_rotation(pScrn, hwc->Options, OPTION_ROTATE);
+        } else {
+            xf86OutputUseScreenMonitor(outputPtr, FALSE);
+            hwc->external_display.pCrtc = crtcPtr;
+            hwc->external_display.pOutput = outputPtr;
+            hwc->external_display.rotationOnFirstSetMode = TRUE;// option_to_rotation(pScrn, hwc->Options, OPTION_EXTERNAL_ROTATE);
         }
     }
 
     // bitmask
-    hwc->connected_outputs = 0b01; //TODO need to actually do a detection?
+    hwc->connected_outputs = 0b01; //TODO might need to actually do a detection?
 
     // Pick rotated HWComposer screen resolution
-//    pScrn->virtualX = hwc->primary_display.width;  //startsmall?
-//    pScrn->virtualY = hwc->primary_display.height;
-//    pScrn->initial_rotation = HWC_ROTATE_CCW;
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init primary picked\n");
-//    pScrn->displayWidth = pScrn->virtualX;
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init dx: %d, w: %d, h: %d, outputs: %d\n",
                pScrn->display->virtualX, pScrn->virtualX, pScrn->virtualY, hwc->connected_outputs);
-
-    // Construct a mode with the screen's initial dimensions
-//    hwc->modes = xf86CVTMode(hwc->primary_display.width, hwc->primary_display.height, 60, 0, 0);
 
     xf86ProviderSetup(pScrn, NULL, "hwcomposer");
 
@@ -802,10 +854,6 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
     }
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init dx: %d, w: %d, h: %d, outputs: %d\n",
                pScrn->display->virtualX, pScrn->virtualX, pScrn->virtualY, hwc->connected_outputs);
-
-//    pScrn->virtualX = xf86ModeWidth(pScrn->modes, HWC_ROTATE_CCW);
-//    pScrn->virtualY = xf86ModeHeight(pScrn->modes, HWC_ROTATE_CCW);
-//    hwc_set_mode_major(hwc->paCrtcs[0], pScrn->modes, HWC_ROTATE_CCW, pScrn->virtualX, pScrn->virtualY);
 
     pScrn->currentMode = pScrn->modes;
 

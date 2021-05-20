@@ -45,6 +45,9 @@ void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
 	if (!primaryDisplay) {
 		hwc->external_display_id = display_id;
 		hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
+
+        Bool ret = RRGetInfo(pScrn->pScreen, TRUE);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "RRGetInfo ret:%d", ret);
 //		if (connected) {
 //			for (int i = 0; i < 5 * 1000; ++i) {
 //				// Wait at most 5s for hotplug events
@@ -179,6 +182,17 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
     int presentFence = -1;
     hwc2_compat_display_present(hwc2_compat_display, &presentFence);
     xf86DrvMsg(hwc_display->index, X_INFO, "hwc_present_hwcomposer2 pF: %d\n", presentFence);
+
+//    hwc2_compat_out_fences_t* fences;
+//    err = hwc2_compat_display_get_release_fences(display, &fences);
+//    if (err != HWC2_ERROR_NONE) {
+//        xf86DrvMsg(hwc_display->index, X_INFO, "hwc_present_hwcomposer2 presentAndGetReleaseFences: Failed to get release fences for display %d: %d\n", (uint32_t) display_id, err);
+//        return;
+//    }
+//    int fenceFd = hwc2_compat_out_fences_get_fence(fences, layer);
+//    if (fenceFd != -1)
+//        setFenceBufferFd(buffer, fenceFd);
+//    hwc2_compat_out_fences_destroy(fences);
 
     if (hwc_display->lastPresentFence != -1) {
         sync_wait(hwc_display->lastPresentFence, -1);

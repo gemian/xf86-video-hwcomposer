@@ -68,15 +68,17 @@ typedef enum {
 	OPTION_ACCEL_METHOD,
 	OPTION_EGL_PLATFORM,
 	OPTION_SW_CURSOR,
-	OPTION_ROTATE
+    OPTION_ROTATE,
+    OPTION_EXTERNAL_ROTATE
 } Opts;
 
 static const OptionInfoRec Options[] = {
-		{ OPTION_ACCEL_METHOD, "AccelMethod", OPTV_STRING, {0}, FALSE},
-		{ OPTION_EGL_PLATFORM, "EGLPlatform", OPTV_STRING, {0}, FALSE},
-		{ OPTION_SW_CURSOR,     "SWcursor",    OPTV_BOOLEAN,{0}, FALSE},
-		{ OPTION_ROTATE,       "Rotate",      OPTV_STRING, {0}, FALSE },
-		{ -1,               NULL,       OPTV_NONE,    {0}, FALSE }
+        {OPTION_ACCEL_METHOD,    "AccelMethod",    OPTV_STRING,  {0}, FALSE},
+        {OPTION_EGL_PLATFORM,    "EGLPlatform",    OPTV_STRING,  {0}, FALSE},
+        {OPTION_SW_CURSOR,       "SWcursor",       OPTV_BOOLEAN, {0}, FALSE},
+        {OPTION_ROTATE,          "Rotate",         OPTV_STRING,  {0}, FALSE},
+        {OPTION_EXTERNAL_ROTATE, "ExternalRotate", OPTV_STRING,  {0}, FALSE},
+        {-1,                     NULL,             OPTV_NONE,    {0}, FALSE}
 };
 
 typedef enum {
@@ -124,7 +126,8 @@ typedef struct {
 
 	int width;
 	int height;
-	hwc_rotation rotation;
+//	hwc_rotation rotation;
+    hwc_rotation rotationOnFirstSetMode;
 
 	EGLClientBuffer buffer;
 	int stride;
@@ -135,7 +138,11 @@ typedef struct {
 	int cursorX;
 	int cursorY;
 
-	hwc_renderer_rec hwc_renderer;
+    xf86CrtcPtr pCrtc;
+    xf86OutputPtr pOutput;
+
+    NativeWindowType win;
+    hwc_renderer_rec hwc_renderer;
 	uint32_t hwcVersion;
 
 	//hwc v1 items
@@ -152,9 +159,9 @@ typedef struct {
 void hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_tidy(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
-struct ANativeWindow *hwc_get_native_window(hwc_display_ptr hwc_display);
+void hwc_get_native_window(hwc_display_ptr hwc_display);
 void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display);
-PixmapPtr dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height);
+PixmapPtr get_crtc_pixmap(hwc_display_ptr hwc_display);
 void dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data);
 
 typedef struct HWCRec
@@ -175,8 +182,6 @@ typedef struct HWCRec
 
     /* XRANDR support begin */
     int num_screens;
-    struct _xf86Crtc *paCrtcs[HWC_MAX_SCREENS];
-    struct _xf86Output *paOutputs[HWC_MAX_SCREENS];
     int connected_outputs;
     /* XRANDR support end */
 
@@ -184,7 +189,7 @@ typedef struct HWCRec
 	Bool dirty;
     Bool glamor;
     Bool drihybris;
-    Bool wasTidied;
+    Bool wasRotated;
 
     gralloc_module_t *gralloc;
     alloc_device_t *alloc;
@@ -223,3 +228,16 @@ typedef struct HWCRec
 /* The privates of the hwcomposer driver */
 #define HWCPTR(p)	((HWCPtr)((p)->driverPrivate))
 
+/* Return codes from all functions
+typedef enum {
+    HWC2_ERROR_NONE = 0,
+    HWC2_ERROR_BAD_CONFIG,
+    HWC2_ERROR_BAD_DISPLAY,
+    HWC2_ERROR_BAD_LAYER,
+    HWC2_ERROR_BAD_PARAMETER,
+    HWC2_ERROR_HAS_CHANGES,
+    HWC2_ERROR_NO_RESOURCES,
+    HWC2_ERROR_NOT_VALIDATED,
+    HWC2_ERROR_UNSUPPORTED,
+} hwc2_error_t;
+*/

@@ -252,15 +252,15 @@ static void present(void *user_data, struct ANativeWindow *window,
 void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 								struct ANativeWindowBuffer *buffer);
 
-struct ANativeWindow *hwc_get_native_window(hwc_display_ptr hwc_display) {
-	struct ANativeWindow *win;
+void hwc_get_native_window(hwc_display_ptr hwc_display) {
+
+	xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "hwc_get_native_window width: %d, height: %d\n", hwc_display->width, hwc_display->height);
 
 	if (hwc_display->hwcVersion < HWC_DEVICE_API_VERSION_2_0) {
-		win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, present, hwc_display);
+        hwc_display->win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, present, hwc_display);
 	} else {
-		win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, hwc_present_hwcomposer2, hwc_display);
+        hwc_display->win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, hwc_present_hwcomposer2, hwc_display);
 	}
-	return win;
 }
 
 void hwc_toggle_screen_brightness(ScrnInfoPtr pScrn)
@@ -274,6 +274,8 @@ void hwc_toggle_screen_brightness(ScrnInfoPtr pScrn)
 	}
 	brightness = (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn) ?
 							hwc->screenBrightness : 0;
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_toggle_screen_brightness brightness: %d, pDpms: %d, eDpms: %d, hwcBrightness: %d\n", brightness, hwc->primary_display.dpmsMode, hwc->external_display.dpmsMode, hwc->screenBrightness);
 
 	state.flashMode = LIGHT_FLASH_NONE;
 	state.brightnessMode = BRIGHTNESS_MODE_USER;
