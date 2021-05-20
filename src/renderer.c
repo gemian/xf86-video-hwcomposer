@@ -448,10 +448,17 @@ void *hwc_egl_renderer_thread(void *user_data)
         }
 
         if ((hwc->connected_outputs & 2) && !external_initialised) {
+            hwc_display_init(pScrn, &hwc->external_display, hwc->hwc2Device, hwc->external_display_id);
+            Bool ret = RRGetInfo(pScreen, TRUE);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "RRGetInfo ret:%d\n", ret);
             hwc_egl_renderer_screen_init(pScreen, 1);
+            hwc_output_set_mode(pScrn, &hwc->external_display, 1, DPMSModeOn);
             updateProjection(pScrn, 1);
             external_initialised = TRUE;
             external_dirty = TRUE;
+        }
+        if (!(hwc->connected_outputs & 2) && external_initialised) {
+            external_initialised = FALSE;
         }
 
         pthread_mutex_lock(&(hwc->rendererLock));

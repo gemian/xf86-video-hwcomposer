@@ -378,9 +378,6 @@ dummy_crtc_mode_set(xf86CrtcPtr crtc, DisplayModePtr mode,
                index);
 }
 
-static void
-hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode);
-
 Bool
 hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int x, int y) {
     HWCPtr hwc = HWCPTR(crtc->scrn);
@@ -484,6 +481,8 @@ hwc_hide_cursor(xf86CrtcPtr crtc) {
 
     hwc_display->cursorShown = FALSE;
 
+    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_hide_cursor index: %d\n", index);
+
     hwc_trigger_redraw(crtc->scrn, hwc_display);
 }
 
@@ -499,6 +498,8 @@ hwc_show_cursor(xf86CrtcPtr crtc) {
     }
 
     hwc_display->cursorShown = TRUE;
+
+    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_show_cursor index: %d\n", index);
 
     hwc_trigger_redraw(crtc->scrn, hwc_display);
 }
@@ -586,7 +587,7 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
     hwc_output_set_mode(pScrn, hwc_display, index, mode);
 }
 
-static void
+void
 hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode) {
     HWCPtr hwc = HWCPTR(pScrn);
 
@@ -643,12 +644,17 @@ hwc_output_detect(xf86OutputPtr output) {
     HWCPtr hwc = HWCPTR(output->scrn);
     int index = (int64_t) output->driver_private;
 
-    xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_detect index: %d\n", index);
+    xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_detect index: %d, extId: %ld\n", index, hwc->external_display_id);
 
-    if (hwc->connected_outputs & (1 << index))
+    if (hwc->connected_outputs & (1 << index)) {
+//        if (index == 1 && hwc->external_display_id > 0) {
+//            hwc_display_init(output->scrn, &hwc->external_display, hwc->hwc2Device, hwc->external_display_id);
+//            hwc->external_display_id = 0;
+//        }
         return XF86OutputStatusConnected;
-    else
+    } else {
         return XF86OutputStatusDisconnected;
+    }
 }
 
 static DisplayModePtr
@@ -753,7 +759,7 @@ static const xf86OutputFuncsRec hwcomposer_output_funcs = {
 void
 hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
     HWCPtr hwc = HWCPTR(pScrn);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw display: %p, dirty: %d\n", hwc_display, hwc_display->dirty);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw display: %p, dirty: %d, extId: %ld\n", hwc_display, hwc_display->dirty, hwc->external_display_id);
 
     if (hwc_display->dirty)
         return;

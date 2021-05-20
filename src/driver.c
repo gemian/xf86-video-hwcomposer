@@ -622,6 +622,8 @@ static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
 	pScreen->BlockHandler(pScreen, timeout);
 	pScreen->BlockHandler = hwcBlockHandler;
 
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler\n");
+
 	checkDamageAndTriggerRedraw(pScrn, &hwc->primary_display);
 	checkDamageAndTriggerRedraw(pScrn, &hwc->external_display);
 }

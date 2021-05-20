@@ -163,6 +163,8 @@ void hwc_get_native_window(hwc_display_ptr hwc_display);
 void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display);
 PixmapPtr get_crtc_pixmap(hwc_display_ptr hwc_display);
 void dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data);
+Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_device_t* hwc2_compat_device, int id);
+void hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode);
 
 typedef struct HWCRec
 {

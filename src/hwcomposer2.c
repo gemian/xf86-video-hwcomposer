@@ -43,40 +43,8 @@ void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
            connected ? "connected" : "disconnected",
            primaryDisplay ? "primary" : "external");
 	if (!primaryDisplay) {
-		hwc->external_display_id = display_id;
+        hwc->external_display_id = display_id;
 		hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
-
-        Bool ret = RRGetInfo(pScrn->pScreen, TRUE);
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "RRGetInfo ret:%d", ret);
-//		if (connected) {
-//			for (int i = 0; i < 5 * 1000; ++i) {
-//				// Wait at most 5s for hotplug events
-//				if ((hwc->hwc2_external_display = hwc2_compat_device_get_display_by_id(hwc->hwc2Device, display)))
-//					break;
-//				usleep(1000);
-//			}
-//			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "onHotplugReceived ext: %d\n", hwc->hwc2_external_display);
-//			HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(hwc->hwc2_external_display);
-//			assert(config);
-//
-//			hwc->extWidth = config->width;
-//			hwc->extHeight = config->height;
-//			xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ext width: %i height: %i\n", config->width, config->height);
-//			free(config);
-//			hwc2_compat_layer_t* layer = hwc->hwc2_external_layer = hwc2_compat_display_create_layer(hwc->hwc2_external_display);
-//
-//			hwc2_compat_layer_set_composition_type(layer, HWC2_COMPOSITION_CLIENT);
-//			hwc2_compat_layer_set_blend_mode(layer, HWC2_BLEND_MODE_NONE);
-//			hwc2_compat_layer_set_source_crop(layer, 0.0f, 0.0f, hwc->extWidth, hwc->extHeight);
-//			hwc2_compat_layer_set_display_frame(layer, 0, 0, hwc->extWidth, hwc->extHeight);
-//			hwc2_compat_layer_set_visible_region(layer, 0, 0, hwc->extWidth, hwc->extHeight);
-//
-//			hwc2_compat_display_set_power_mode(hwc->hwc2_external_display, HWC2_POWER_MODE_ON);
-//		} else {
-//			hwc2_compat_display_set_power_mode(hwc->hwc2_external_display, HWC2_POWER_MODE_OFF);
-//			hwc2_compat_display_destroy_layer(hwc->hwc2_external_display, hwc->hwc2_external_layer);
-//			hwc->hwc2_external_layer = NULL;
-//		}
 	}
     hwc2_compat_device_on_hotplug(hwc->hwc2Device, display_id, connected);
 }
@@ -88,12 +56,14 @@ void hwc2_callback_refresh(HWC2EventListener* listener, int32_t sequenceId,
 }
 
 Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_device_t* hwc2_compat_device, int id) {
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init id: %d\n", id);
 	for (int i = 0; i < 5 * 1000; ++i) {
 		// Wait at most 5s for hotplug events
 		if ((display->hwc2_compat_display = hwc2_compat_device_get_display_by_id(hwc2_compat_device, id)))
 			break;
 		usleep(1000);
 	}
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init got display: %p\n", display->hwc2_compat_display);
 	assert(display->hwc2_compat_display);
 
 	HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(display->hwc2_compat_display);
