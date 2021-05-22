@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stddef.h>
+#include <xf86RandR12.h>
 
 #include "driver.h"
 
@@ -177,7 +178,7 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool 
 
     if (!renderer->surface) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init creating window surface\n");
-        surface = eglCreateWindowSurface((EGLDisplay) egl_display, ecfg, hwc_display->win, NULL);
+        surface = eglCreateWindowSurface((EGLDisplay) egl_display, ecfg, (EGLNativeWindowType) hwc_display->win, NULL);
         assert(eglGetError() == EGL_SUCCESS);
         assert(surface != EGL_NO_SURFACE);
         renderer->surface = surface;
@@ -301,6 +302,30 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
     }
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init out\n");
+}
+
+void hwc_egl_renderer_external_power_up(ScrnInfoPtr pScrn)
+{
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_external_power_up\n");
+    hdmi_power_enable(TRUE);
+    hdmi_enable(TRUE);
+    hdmi_set_video_config(0);
+}
+
+void hwc_egl_renderer_external_tidy(ScreenPtr pScreen)
+{
+    ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
+    HWCPtr hwc = HWCPTR(pScrn);
+    hwc_renderer_ptr renderer = &hwc->external_display.hwc_renderer;
+
+    int ret = eglDestroySurface(hwc->egl_display, renderer->surface);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_external_tidy destroySurface ret: %d\n", ret);
+
+    hwc2_compat_display_destroy_layer(hwc->external_display.hwc2_compat_display, hwc->external_display.hwc2_compat_layer);
+    hwc2_compat_display_set_power_mode(hwc->external_display.hwc2_compat_display, HWC2_POWER_MODE_OFF);
+
+    hdmi_power_enable(FALSE);
+    hdmi_enable(FALSE);
 }
 
 void hwc_translate_cursor(hwc_rotation rotation, int x, int y, int cursorWidth, int cursorHeight,
@@ -449,16 +474,19 @@ void *hwc_egl_renderer_thread(void *user_data)
 
         if ((hwc->connected_outputs & 2) && !external_initialised) {
             hwc_display_init(pScrn, &hwc->external_display, hwc->hwc2Device, hwc->external_display_id);
-            Bool ret = RRGetInfo(pScreen, TRUE);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "RRGetInfo ret:%d\n", ret);
+//            Bool ret = RRGetInfo(pScreen, TRUE);
+            Bool ret = xf86RandR12CreateScreenResources(pScreen);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "xf86RandR12CreateScreenResources ret:%d\n", ret);
             hwc_egl_renderer_screen_init(pScreen, 1);
-            hwc_output_set_mode(pScrn, &hwc->external_display, 1, DPMSModeOn);
+            hwc_output_set_mode(pScrn, &hwc->external_display, HWC_DISPLAY_EXTERNAL, DPMSModeOn);
+
             updateProjection(pScrn, 1);
             external_initialised = TRUE;
             external_dirty = TRUE;
         }
         if (!(hwc->connected_outputs & 2) && external_initialised) {
             external_initialised = FALSE;
+            hwc_egl_renderer_external_tidy(pScreen);
         }
 
         pthread_mutex_lock(&(hwc->rendererLock));

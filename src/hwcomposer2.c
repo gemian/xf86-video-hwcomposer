@@ -12,6 +12,8 @@
 #include <stddef.h>
 #include <malloc.h>
 #include <dlfcn.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
 
 #include <android-config.h>
 #include <sync/sync.h>
@@ -45,6 +47,7 @@ void hwc2_callback_hotplug(HWC2EventListener* listener, int32_t sequenceId,
 	if (!primaryDisplay) {
         hwc->external_display_id = display_id;
 		hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
+        hwc_trigger_redraw(pScrn, &hwc->external_display);
 	}
     hwc2_compat_device_on_hotplug(hwc->hwc2Device, display_id, connected);
 }
@@ -53,6 +56,49 @@ void hwc2_callback_refresh(HWC2EventListener* listener, int32_t sequenceId,
                            hwc2_display_t display_id)
 {
 	xf86DrvMsg(0, X_INFO, "hwc2_callback_refresh (%p, %d, %ld)\n", listener, sequenceId, display_id);
+}
+
+#define HDMI_DRV "/dev/hdmitx"
+
+#define HDMI_IOW(num, dtype)     _IOW('H', num, dtype)
+#define HDMI_IOWR(num, dtype)    _IOWR('H', num, dtype)
+#define HDMI_IO(num)             _IO('H', num)
+
+#define MTK_HDMI_AUDIO_VIDEO_ENABLE             HDMI_IO(1)
+#define MTK_HDMI_POWER_ENABLE                   HDMI_IOW(12, int)
+#define MTK_HDMI_VIDEO_CONFIG                   HDMI_IOWR(6, int)
+
+static Bool hdmi_ioctl(int code, long value)
+{
+    int fd = open(HDMI_DRV, O_RDONLY, 0);
+    int ret = -1;
+    if (fd >= 0) {
+        ret = ioctl(fd, code, value);
+        if (ret < 0) {
+            xf86DrvMsg(0, X_INFO, "[HDMI] [%s] failed. ioctlCode: %d, errno: %d\n",
+                    __func__, code, errno);
+        }
+        close(fd);
+    } else {
+        xf86DrvMsg(0, X_INFO, "[HDMI] [%s] open hdmitx failed. errno: %d\n", __func__, errno);
+    }
+    if (ret < 0) {
+        return FALSE;
+    } else {
+        return TRUE;
+    }
+}
+
+Bool hdmi_power_enable(Bool enable) {
+    return hdmi_ioctl(MTK_HDMI_POWER_ENABLE, enable);
+}
+
+Bool hdmi_enable(Bool enable) {
+    return hdmi_ioctl(MTK_HDMI_AUDIO_VIDEO_ENABLE, enable);
+}
+
+Bool hdmi_set_video_config(int vformat)  {
+    return hdmi_ioctl(MTK_HDMI_VIDEO_CONFIG, vformat);
 }
 
 Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_device_t* hwc2_compat_device, int id) {

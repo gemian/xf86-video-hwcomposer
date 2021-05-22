@@ -23,6 +23,8 @@ void *android_dlopen(const char *filename, int flags);
 void *android_dlsym(void *handle, const char *symbol);
 int android_dlclose(void *handle);
 
+extern Bool device_open;
+
 inline static uint32_t interpreted_version(hw_device_t *hwc_device)
 {
 	uint32_t version = hwc_device->version;
@@ -111,7 +113,7 @@ Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn)
 		hwc->primary_display.hwcVersion = interpreted_version(hwcDevice);
 	}
 
-	if (hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_2_0)
+    if (hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_2_0)
 		return hwc_hwcomposer2_init(pScrn);
 	
 	hwc_composer_device_1_t *hwcDevicePtr = (hwc_composer_device_1_t*) hwcDevice;
@@ -212,11 +214,14 @@ Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn)
 	list->flags = HWC_GEOMETRY_CHANGED;
 	list->numHwLayers = 2;
 
-	return TRUE;
+    return TRUE;
 }
 
 void hwc_hwcomposer_close(ScrnInfoPtr pScrn)
 {
+    HWCPtr hwc = HWCPTR(pScrn);
+
+    close_udev_switches(&hwc->udev_switches);
 }
 
 static void present(void *user_data, struct ANativeWindow *window,

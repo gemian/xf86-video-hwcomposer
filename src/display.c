@@ -18,6 +18,8 @@
 
 #include "driver.h"
 
+extern Bool device_open;
+
 Bool hwc_lights_init(ScrnInfoPtr pScrn) {
     HWCPtr hwc = HWCPTR(pScrn);
     hwc->lightsDevice = NULL;
@@ -402,9 +404,10 @@ hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int
         char buf[100];
         snprintf(buf, sizeof buf, "echo %d > /sys/devices/platform/touch/screen_rotation", crtc->rotation);
         int ret = system(buf);
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch rotation ret: %d\n", ret);
+        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch rotation ret: %d, dpmsMode: %d, device_open: %d\n", ret, hwc_display->dpmsMode, device_open);
 
-        if (hwc_display->dpmsMode != DPMSModeOn) {
+        if (hwc_display->dpmsMode != DPMSModeOn && device_open) {
+            xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "calling hwc_output_set_mode\n");
             hwc_output_set_mode(crtc->scrn, hwc_display, index, DPMSModeOn);
         }
     }

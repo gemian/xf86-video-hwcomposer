@@ -141,7 +141,7 @@ typedef struct {
     xf86CrtcPtr pCrtc;
     xf86OutputPtr pOutput;
 
-    NativeWindowType win;
+    struct ANativeWindow *win;
     hwc_renderer_rec hwc_renderer;
 	uint32_t hwcVersion;
 
@@ -156,6 +156,13 @@ typedef struct {
 	int lastPresentFence;
 } hwc_display_rec, *hwc_display_ptr;
 
+typedef struct udev_switches_data
+{
+    ScrnInfoPtr pScrn;
+    struct udev *udev;
+    struct udev_monitor *monitor;
+} udev_switches_data_rec, *udev_switches_data_ptr;
+
 void hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_tidy(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
@@ -165,6 +172,12 @@ PixmapPtr get_crtc_pixmap(hwc_display_ptr hwc_display);
 void dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data);
 Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_device_t* hwc2_compat_device, int id);
 void hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, int mode);
+Bool hdmi_power_enable(Bool enable);
+Bool hdmi_enable(Bool enable);
+Bool hdmi_set_video_config(int vformat);
+void hwc_egl_renderer_external_power_up(ScrnInfoPtr pScrn);
+Bool init_udev_switches(udev_switches_data_ptr data);
+Bool close_udev_switches(udev_switches_data_ptr data);
 
 typedef struct HWCRec
 {
@@ -201,6 +214,7 @@ typedef struct HWCRec
 	hwc_display_rec primary_display;
 	hwc_display_rec external_display;
 
+    udev_switches_data_rec udev_switches;
 	hwc2_display_t external_display_id;
 
     EGLClientBuffer buffer;

@@ -86,6 +86,8 @@ static Bool	hwc_driver_func(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
  */
 static int pix24bpp = 0;
 
+extern Bool device_open;
+
 //Atom width_mm_atom = 0;
 //#define WIDTH_MM_NAME  "WIDTH_MM"
 //Atom height_mm_atom = 0;
@@ -354,6 +356,34 @@ void hwc_set_egl_platform(ScrnInfoPtr pScrn)
     }
 }
 
+static int read_int_from_file(ScrnInfoPtr pScrn, const char *filename) {
+    FILE *file;
+    char state[256] = "", *ret;
+
+    file = fopen(filename, "r");
+    if (!file) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "read_int_from_file failed fopen file: %p\n", file);
+        return -1;
+    }
+
+    ret = fgets(state, sizeof(state)-1, file);
+    fclose(file);
+
+    if (!ret) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "read_int_from_file failed ret: %s\n", ret);
+        return -1;
+    }
+
+    char *end;
+    const long state_long = strtol(state, &end, 10);
+    if (state == end) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "strtol failed end: %s\n", end);
+        return -1;
+    }
+
+    return (int)state_long;
+}
+
 /* Mandatory */
 Bool
 PreInit(ScrnInfoPtr pScrn, int flags)
@@ -460,7 +490,12 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 	// bitmask
 	hwc->connected_outputs = 1;
 
-	hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
+    hwc->udev_switches.pScrn = pScrn;
+    init_udev_switches(&hwc->udev_switches);
+    device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
+    hwc->primary_display.dpmsMode = DPMSModeOff;
+
+    hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
 
     xf86SetDpi(pScrn, 0, 0);
 
@@ -664,7 +699,7 @@ static void checkDirtyAndRenderUpdate(ScrnInfoPtr pScrn, hwc_display_ptr hwc_dis
     HWCPtr hwc = HWCPTR(pScrn);
     PixmapPtr rootPixmap;
     int err;
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "checkDirtyAndRenderUpdate dirty: %d, dpms: %d\n", hwc_display->dirty, hwc_display->dpmsMode);
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "checkDirtyAndRenderUpdate dirty: %d, dpms: %d\n", hwc_display->dirty, hwc_display->dpmsMode);
 
     if (hwc_display->dirty && hwc_display->dpmsMode == DPMSModeOn) {
         void *pixels = NULL;
@@ -771,7 +806,6 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     hwc->CreateScreenResources = pScreen->CreateScreenResources;
     pScreen->CreateScreenResources = CreateScreenResources;
 
-
     xf86SetBackingStore(pScreen);
     xf86SetSilkenMouse(pScreen);
 
@@ -815,7 +849,6 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     pScreen->CloseScreen = CloseScreen;
 	
     xf86DPMSInit(pScreen, xf86DPMSSet, 0);
-    hwc->primary_display.dpmsMode = DPMSModeOn; //TODO Should we really check first? - based upon device open/closed status?
 
     if (hwc->glamor) {
         XF86VideoAdaptorPtr     glamor_adaptor;
