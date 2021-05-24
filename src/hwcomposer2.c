@@ -144,15 +144,14 @@ Bool hwc_hwcomposer2_init(ScrnInfoPtr pScrn)
     procs->listener.on_refresh_received = hwc2_callback_refresh;
     procs->pScrn = pScrn;
 
-    hwc2_compat_device_t* hwc2_device = hwc->hwc2Device = hwc2_compat_device_new(false);
-    assert(hwc2_device);
+    hwc->hwc2Device = hwc2_compat_device_new(false);
+    assert(hwc->hwc2Device);
 
 	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer2_init outputs: %d\n", hwc->connected_outputs);
 
-    hwc2_compat_device_register_callback(hwc2_device, &procs->listener,
-        composerSequenceId++);
+    hwc2_compat_device_register_callback(hwc->hwc2Device, &procs->listener, composerSequenceId++);
 
-    return hwc_display_init(pScrn, &hwc->primary_display, hwc2_device, 0);
+    return hwc_display_init(pScrn, &hwc->primary_display, hwc->hwc2Device, 0);
 }
 
 void hwc_hwcomposer2_close(ScrnInfoPtr pScrn)
@@ -173,8 +172,7 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 
     hwc2_compat_display_t* hwc2_compat_display = hwc_display->hwc2_compat_display;
 
-    error = hwc2_compat_display_validate(hwc2_compat_display, &numTypes,
-                                                    &numRequests);
+    error = hwc2_compat_display_validate(hwc2_compat_display, &numTypes, &numRequests);
     if (error != HWC2_ERROR_NONE && error != HWC2_ERROR_HAS_CHANGES) {
         xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate failed: %d", error);
         return;
@@ -226,7 +224,7 @@ void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
 
     HWCPtr hwc = HWCPTR(pScrn);
 	hwc_display_ptr hwc_display = NULL;
-	if (disp == 0) {
+	if (disp == HWC_DISPLAY_PRIMARY) {
 		hwc_display = &hwc->primary_display;
 	} else {
 		hwc_display = &hwc->external_display;
@@ -238,5 +236,9 @@ void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
 		hwc_display->lastPresentFence = -1;
     }
 
-	hwc2_compat_display_set_power_mode(hwc_display->hwc2_compat_display, (mode) ? HWC2_POWER_MODE_ON : HWC2_POWER_MODE_OFF);
+    if (mode == DPMSModeOn) {
+        hwc2_compat_display_set_power_mode(hwc_display->hwc2_compat_display, HWC2_POWER_MODE_ON);
+    } else {
+        hwc2_compat_display_set_power_mode(hwc_display->hwc2_compat_display, HWC2_POWER_MODE_OFF);
+    }
 }

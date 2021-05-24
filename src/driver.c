@@ -86,8 +86,6 @@ static Bool	hwc_driver_func(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
  */
 static int pix24bpp = 0;
 
-extern Bool device_open;
-
 //Atom width_mm_atom = 0;
 //#define WIDTH_MM_NAME  "WIDTH_MM"
 //Atom height_mm_atom = 0;
@@ -487,12 +485,10 @@ PreInit(ScrnInfoPtr pScrn, int flags)
                     "failed to initialize lights module for backlight control\n");
     }
 
-	// bitmask
-	hwc->connected_outputs = 1;
-
     hwc->udev_switches.pScrn = pScrn;
     init_udev_switches(&hwc->udev_switches);
-    device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
+    hwc->device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
+    hwc->usb_hdmi_plugged = read_int_from_file(pScrn, "/sys/class/switch/usb_hdmi/state");
     hwc->primary_display.dpmsMode = DPMSModeOff;
 
     hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
@@ -524,7 +520,7 @@ PreInit(ScrnInfoPtr pScrn, int flags)
         xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "glamor disabled\n");
     }
 
-	if (!hwc_egl_renderer_init(pScrn, &hwc->primary_display, do_glamor)) {
+	if (!hwc_egl_renderer_init(pScrn, do_glamor)) {
 		xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to initialize primary EGL renderer\n");
 		return FALSE;
 	}

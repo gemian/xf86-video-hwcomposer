@@ -115,9 +115,6 @@ typedef struct {
 
     float projection[16];
     EGLImageKHR image;
-
-    hwc_renderer_shader rootShader;
-    hwc_renderer_shader projShader;
 } hwc_renderer_rec, *hwc_renderer_ptr;
 
 typedef struct {
@@ -126,7 +123,6 @@ typedef struct {
 
 	int width;
 	int height;
-//	hwc_rotation rotation;
     hwc_rotation rotationOnFirstSetMode;
 
 	EGLClientBuffer buffer;
@@ -143,7 +139,6 @@ typedef struct {
 
     struct ANativeWindow *win;
     hwc_renderer_rec hwc_renderer;
-	uint32_t hwcVersion;
 
 	//hwc v1 items
 	hwc_composer_device_1_t *hwcDevicePtr;
@@ -165,8 +160,7 @@ typedef struct udev_switches_data
 
 void hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
 Bool hwc_egl_renderer_tidy(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display);
-Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, Bool do_glamor);
-void hwc_get_native_window(hwc_display_ptr hwc_display);
+Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor);
 void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display);
 PixmapPtr get_crtc_pixmap(hwc_display_ptr hwc_display);
 void dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data);
@@ -214,6 +208,8 @@ typedef struct HWCRec
 	hwc_display_rec primary_display;
 	hwc_display_rec external_display;
 
+    Bool device_open;
+    Bool usb_hdmi_plugged;
     udev_switches_data_rec udev_switches;
 	hwc2_display_t external_display_id;
 
@@ -230,9 +226,13 @@ typedef struct HWCRec
 
     DisplayModePtr modes;
 
+    uint32_t hwcVersion;
 	egl_proc_rec egl_proc;
 	EGLDisplay egl_display;
+    EGLConfig egl_cfg;
 	EGLSyncKHR egl_fence;
+    hwc_renderer_shader rootShader;
+    hwc_renderer_shader projShader;
 
 	pthread_t rendererThread;
     int rendererIsRunning;
@@ -241,19 +241,21 @@ typedef struct HWCRec
     pthread_cond_t dirtyCond;
 } HWCRec, *HWCPtr;
 
+void hwc_get_native_window(HWCPtr hwc, hwc_display_ptr hwc_display);
+
 /* The privates of the hwcomposer driver */
 #define HWCPTR(p)	((HWCPtr)((p)->driverPrivate))
 
 /* Return codes from all functions
 typedef enum {
     HWC2_ERROR_NONE = 0,
-    HWC2_ERROR_BAD_CONFIG,
-    HWC2_ERROR_BAD_DISPLAY,
-    HWC2_ERROR_BAD_LAYER,
-    HWC2_ERROR_BAD_PARAMETER,
-    HWC2_ERROR_HAS_CHANGES,
-    HWC2_ERROR_NO_RESOURCES,
-    HWC2_ERROR_NOT_VALIDATED,
-    HWC2_ERROR_UNSUPPORTED,
+    HWC2_ERROR_BAD_CONFIG,//1
+    HWC2_ERROR_BAD_DISPLAY,//2
+    HWC2_ERROR_BAD_LAYER,//3
+    HWC2_ERROR_BAD_PARAMETER,//4
+    HWC2_ERROR_HAS_CHANGES,//5
+    HWC2_ERROR_NO_RESOURCES,//6
+    HWC2_ERROR_NOT_VALIDATED,//7
+    HWC2_ERROR_UNSUPPORTED,//8
 } hwc2_error_t;
 */

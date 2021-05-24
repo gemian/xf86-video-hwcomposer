@@ -31,8 +31,6 @@
 
 #define SWTICH_DEV_TYPE "switch"
 
-Bool device_open = FALSE;
-
 static void udev_callback(int fd, int ready, void *data)
 {
     udev_switches_data_ptr dataPtr = data;
@@ -77,13 +75,14 @@ static void udev_callback(int fd, int ready, void *data)
     }
 
     if (!strcmp(dev_path, "/devices/virtual/" SWTICH_DEV_TYPE "/hall")) {
-        device_open = state_long;
-        if (hwc->primary_display.dpmsMode != DPMSModeOn && device_open) {
+        hwc->device_open = state_long;
+        if (hwc->primary_display.dpmsMode != DPMSModeOn && hwc->device_open) {
             hwc_output_set_mode(dataPtr->pScrn, &hwc->primary_display, HWC_DISPLAY_PRIMARY, DPMSModeOn);
-        } else if (hwc->primary_display.dpmsMode == DPMSModeOn && !device_open) {
+        } else if (hwc->primary_display.dpmsMode == DPMSModeOn && !hwc->device_open) {
             hwc_output_set_mode(dataPtr->pScrn, &hwc->primary_display, HWC_DISPLAY_PRIMARY, DPMSModeOff);
         }
     } else if (!strcmp(dev_path, "/devices/virtual/" SWTICH_DEV_TYPE "/usb_hdmi")) {
+        hwc->usb_hdmi_plugged = state_long;
         if (state_long == 1) {
             hwc_egl_renderer_external_power_up(dataPtr->pScrn);
         }

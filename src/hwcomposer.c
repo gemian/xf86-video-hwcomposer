@@ -23,8 +23,6 @@ void *android_dlopen(const char *filename, int flags);
 void *android_dlsym(void *handle, const char *symbol);
 int android_dlclose(void *handle);
 
-extern Bool device_open;
-
 inline static uint32_t interpreted_version(hw_device_t *hwc_device)
 {
 	uint32_t version = hwc_device->version;
@@ -43,19 +41,19 @@ void hwc_set_power_mode(ScrnInfoPtr pScrn, int disp, int mode)
 {
 	HWCPtr hwc = HWCPTR(pScrn);
     
-	if (hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_2_0) {
+	if (hwc->hwcVersion == HWC_DEVICE_API_VERSION_2_0) {
 		hwc_set_power_mode_hwcomposer2(pScrn, disp, mode);
 	} else {
 		hwc_composer_device_1_t *hwcDevicePtr = hwc->primary_display.hwcDevicePtr;
-		if (disp == 1) {
+		if (disp == HWC_DISPLAY_EXTERNAL) {
 			hwcDevicePtr = hwc->external_display.hwcDevicePtr;
 		}
 		hw_device_t * hwcDevice = &hwcDevicePtr->common;
 
-		if (hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_1_5 || hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_1_5) {
-			hwcDevicePtr->setPowerMode(hwcDevicePtr, disp, (mode) ? HWC_POWER_MODE_NORMAL : HWC_POWER_MODE_OFF);
+		if (hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_5 || hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_5) {
+			hwcDevicePtr->setPowerMode(hwcDevicePtr, disp, (mode == DPMSModeOn) ? HWC_POWER_MODE_NORMAL : HWC_POWER_MODE_OFF);
 		} else {
-			hwcDevicePtr->blank(hwcDevicePtr, disp, (mode) ? 0 : 1);
+			hwcDevicePtr->blank(hwcDevicePtr, disp, (mode == DPMSModeOn) ? 0 : 1);
 		}
 	}
 }
@@ -108,17 +106,17 @@ Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn)
 	err = hwcModule->methods->open(hwcModule, HWC_HARDWARE_COMPOSER, &hwcDevice);
 	if (err) {
 		// For weird reason module open seems to currently fail on tested HWC2 device
-		hwc->primary_display.hwcVersion = HWC_DEVICE_API_VERSION_2_0;
+		hwc->hwcVersion = HWC_DEVICE_API_VERSION_2_0;
 	} else {
-		hwc->primary_display.hwcVersion = interpreted_version(hwcDevice);
+		hwc->hwcVersion = interpreted_version(hwcDevice);
 	}
 
-    if (hwc->primary_display.hwcVersion == HWC_DEVICE_API_VERSION_2_0)
+    if (hwc->hwcVersion == HWC_DEVICE_API_VERSION_2_0)
 		return hwc_hwcomposer2_init(pScrn);
 	
 	hwc_composer_device_1_t *hwcDevicePtr = (hwc_composer_device_1_t*) hwcDevice;
 	hwc->primary_display.hwcDevicePtr = hwcDevicePtr;
-	hwc_set_power_mode(pScrn, HWC_DISPLAY_PRIMARY, 1);
+	hwc_set_power_mode(pScrn, HWC_DISPLAY_PRIMARY, DPMSModeOn);
 
 	uint32_t configs[5];
 	size_t numConfigs = 5;
@@ -257,11 +255,11 @@ static void present(void *user_data, struct ANativeWindow *window,
 void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 								struct ANativeWindowBuffer *buffer);
 
-void hwc_get_native_window(hwc_display_ptr hwc_display) {
+void hwc_get_native_window(HWCPtr hwc, hwc_display_ptr hwc_display) {
 
 	xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "hwc_get_native_window width: %d, height: %d\n", hwc_display->width, hwc_display->height);
 
-	if (hwc_display->hwcVersion < HWC_DEVICE_API_VERSION_2_0) {
+	if (hwc->hwcVersion < HWC_DEVICE_API_VERSION_2_0) {
         hwc_display->win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, present, hwc_display);
 	} else {
         hwc_display->win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, hwc_present_hwcomposer2, hwc_display);
@@ -272,13 +270,14 @@ void hwc_toggle_screen_brightness(ScrnInfoPtr pScrn)
 {
 	HWCPtr hwc = HWCPTR(pScrn);
 	struct light_state_t state;
-	int brightness;
+	int brightness = 0;
 
 	if (!hwc->lightsDevice) {
 		return;
 	}
-	brightness = (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn) ?
-							hwc->screenBrightness : 0;
+	if (hwc->primary_display.dpmsMode == DPMSModeOn) {
+        brightness = hwc->screenBrightness;
+    }
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_toggle_screen_brightness brightness: %d, pDpms: %d, eDpms: %d, hwcBrightness: %d\n", brightness, hwc->primary_display.dpmsMode, hwc->external_display.dpmsMode, hwc->screenBrightness);
 

@@ -18,8 +18,6 @@
 
 #include "driver.h"
 
-extern Bool device_open;
-
 Bool hwc_lights_init(ScrnInfoPtr pScrn) {
     HWCPtr hwc = HWCPTR(pScrn);
     hwc->lightsDevice = NULL;
@@ -404,9 +402,9 @@ hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int
         char buf[100];
         snprintf(buf, sizeof buf, "echo %d > /sys/devices/platform/touch/screen_rotation", crtc->rotation);
         int ret = system(buf);
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch rotation ret: %d, dpmsMode: %d, device_open: %d\n", ret, hwc_display->dpmsMode, device_open);
+        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_set_mode_major updated touch rotation ret: %d, dpmsMode: %d, device_open: %d\n", ret, hwc_display->dpmsMode, hwc->device_open);
 
-        if (hwc_display->dpmsMode != DPMSModeOn && device_open) {
+        if (hwc_display->dpmsMode != DPMSModeOn && hwc->device_open) {
             xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "calling hwc_output_set_mode\n");
             hwc_output_set_mode(crtc->scrn, hwc_display, index, DPMSModeOn);
         }
@@ -569,16 +567,13 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
         hwc_display = &hwc->external_display;
     }
 
-    xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_dpms mode: %d, index: %d\n", mode, index);
-
-    ScrnInfoPtr pScrn;
-    pScrn = output->scrn;
-
-    hwc_display->dpmsMode = mode;
+    xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_dpms mode: %d, index: %d, connected: %d\n", mode, index, hwc->connected_outputs & (1 << index));
 
     if (index == 1 && !(hwc->connected_outputs & (1 << index))) {
         return;
     }
+
+    hwc_display->dpmsMode = mode;
 
     if (mode != DPMSModeOn) {
         // Wait for the renderer thread to finish to avoid causing locks
@@ -587,6 +582,8 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
         pthread_mutex_unlock(&(hwc->dirtyLock));
     }
 
+    ScrnInfoPtr pScrn;
+    pScrn = output->scrn;
     hwc_output_set_mode(pScrn, hwc_display, index, mode);
 }
 
@@ -599,10 +596,12 @@ hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, i
     hwc_display->dpmsMode = mode;
 
     pthread_mutex_lock(&(hwc->rendererLock));
-    hwc_set_power_mode(pScrn, index, (mode == DPMSModeOn) ? 1 : 0);
+    hwc_set_power_mode(pScrn, index, mode);
     pthread_mutex_unlock(&(hwc->rendererLock));
 
-    hwc_toggle_screen_brightness(pScrn);
+    if (index == HWC_DISPLAY_PRIMARY) {
+        hwc_toggle_screen_brightness(pScrn);
+    }
 
     if (mode == DPMSModeOn) {
         // Force redraw after unblank
@@ -667,11 +666,14 @@ hwc_output_get_modes(xf86OutputPtr output) {
 
     xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_get_modes - pW: %d, pH: %d, eW: %d, eH:%d index: %d\n", hwc->primary_display.width, hwc->primary_display.height, hwc->external_display.width, hwc->external_display.height, index);
 
+    DisplayModePtr mode;
     if (index == 0) {
-        return xf86CVTMode(hwc->primary_display.width, hwc->primary_display.height, 60, 0, 0);
+        mode = xf86CVTMode(hwc->primary_display.width, hwc->primary_display.height, 60, 0, 0);
     } else {
-        return xf86CVTMode(hwc->external_display.width, hwc->external_display.height, 60, 0, 0);
+        mode = xf86CVTMode(hwc->external_display.width, hwc->external_display.height, 60, 0, 0);
     }
+    mode->type = M_T_DRIVER | M_T_PREFERRED;
+    return mode;
 }
 
 void dummy_output_register_prop(xf86OutputPtr output, Atom prop, uint64_t value) {
@@ -773,34 +775,6 @@ hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
     pthread_mutex_unlock(&(hwc->dirtyLock));
 }
 
-static int
-option_to_rotation(ScrnInfoPtr pScrn, OptionInfoPtr options, int rotateType) {
-    hwc_rotation ret;
-    const char *s;
-
-    if (s = xf86GetOptValString(options, rotateType)) {
-        if (!xf86NameCmp(s, "normal")) {
-            ret = HWC_ROTATE_NORMAL;
-        } else if (!xf86NameCmp(s, "left")) {
-            ret = HWC_ROTATE_CW;
-            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen clockwise\n");
-        } else if (!xf86NameCmp(s, "inverted")) {
-            ret = HWC_ROTATE_UD;
-            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen upside-down\n");
-        } else if (!xf86NameCmp(s, "right") || !xf86NameCmp(s, "CCW")) {
-            ret = HWC_ROTATE_CCW;
-            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "rotating primary screen counter-clockwise\n");
-        } else {
-            ret = 0;
-            xf86DrvMsg(pScrn->scrnIndex, X_CONFIG,
-                       "\"%s\" is not a valid value for Option \"Primary|ExternalRotate\"\n", s);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-                       "valid options are \"normal\", \"right\", \"inverted\", \"left\"\n");
-        }
-    }
-    return ret;
-}
-
 Bool
 hwc_display_pre_init(ScrnInfoPtr pScrn) {
     ScreenPtr pScreen = pScrn->pScreen;
@@ -824,7 +798,6 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
         snprintf(szOutput, sizeof(szOutput), "Screen%u", i);
         xf86OutputPtr outputPtr = xf86OutputCreate(pScrn, &hwcomposer_output_funcs, szOutput);
         outputPtr->possible_crtcs = 1 << i;
-//        outputPtr->crtc = crtcPtr;
         outputPtr->possible_clones = 0;
         outputPtr->driver_private = (void *) (uintptr_t) i;
 
@@ -836,17 +809,21 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
             xf86OutputUseScreenMonitor(outputPtr, TRUE);
             hwc->primary_display.pCrtc = crtcPtr;
             hwc->primary_display.pOutput = outputPtr;
-            hwc->primary_display.rotationOnFirstSetMode = TRUE;// option_to_rotation(pScrn, hwc->Options, OPTION_ROTATE);
+            hwc->primary_display.rotationOnFirstSetMode = TRUE;
         } else {
             xf86OutputUseScreenMonitor(outputPtr, FALSE);
             hwc->external_display.pCrtc = crtcPtr;
             hwc->external_display.pOutput = outputPtr;
-            hwc->external_display.rotationOnFirstSetMode = TRUE;// option_to_rotation(pScrn, hwc->Options, OPTION_EXTERNAL_ROTATE);
+            hwc->external_display.rotationOnFirstSetMode = TRUE;
         }
     }
 
-    // bitmask
-    hwc->connected_outputs = 0b01; //TODO might need to actually do a detection?
+    if (hwc->device_open > 0) {
+        hwc->connected_outputs |= 1 << 0;
+    }
+    if (hwc->usb_hdmi_plugged > 0){
+        hwc->connected_outputs |= 1 << 1;
+    }
 
     // Pick rotated HWComposer screen resolution
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init primary picked\n");
