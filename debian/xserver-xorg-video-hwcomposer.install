@@ -1,1 +1,2 @@
 usr/lib/xorg/modules/drivers/*.so
+debian/20-hwcomposer.conf /etc/X11/xorg.conf.d/
