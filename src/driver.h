@@ -213,9 +213,6 @@ typedef struct HWCRec
     udev_switches_data_rec udev_switches;
 	hwc2_display_t external_display_id;
 
-    EGLClientBuffer buffer;
-    int stride;
-
     xf86CursorInfoPtr cursorInfo;
     int cursorWidth;
     int cursorHeight;

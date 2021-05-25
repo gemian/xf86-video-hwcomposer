@@ -929,10 +929,15 @@ CloseScreen(CLOSE_SCREEN_ARGS_DECL)
     pthread_mutex_destroy(&(hwc->dirtyLock));
     pthread_cond_destroy(&(hwc->dirtyCond));
 
-    if (hwc->buffer != NULL) {
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->buffer);
-        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->buffer);
-        hwc->buffer = NULL;
+    if (hwc->primary_display.buffer != NULL) {
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->primary_display.buffer);
+        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->primary_display.buffer);
+        hwc->primary_display.buffer = NULL;
+    }
+    if (hwc->external_display.buffer != NULL) {
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->external_display.buffer);
+        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->external_display.buffer);
+        hwc->external_display.buffer = NULL;
     }
 
     if (hwc->CursorInfo)
