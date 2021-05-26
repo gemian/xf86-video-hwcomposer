@@ -41,6 +41,7 @@
 #ifdef ENABLE_DRIHYBRIS
 #include <drihybris.h>
 #endif
+#include <hybris/hwcomposerwindow/hwcomposer.h>
 
 /* These need to be checked */
 #include <X11/X.h>
@@ -938,6 +939,15 @@ CloseScreen(CLOSE_SCREEN_ARGS_DECL)
         hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->external_display.buffer);
         hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->external_display.buffer);
         hwc->external_display.buffer = NULL;
+    }
+
+    if (hwc->primary_display.win  != NULL) {
+        HWCNativeWindowDestroy(hwc->primary_display.win);
+        hwc->primary_display.win = NULL;
+    }
+    if (hwc->external_display.win != NULL) {
+        HWCNativeWindowDestroy(hwc->external_display.win);
+        hwc->external_display.win = NULL;
     }
 
     if (hwc->CursorInfo)

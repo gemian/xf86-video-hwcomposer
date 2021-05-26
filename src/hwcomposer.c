@@ -259,6 +259,16 @@ void hwc_get_native_window(HWCPtr hwc, hwc_display_ptr hwc_display) {
 
 	xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "hwc_get_native_window width: %d, height: %d\n", hwc_display->width, hwc_display->height);
 
+    hwc_display->hwc2_compat_layer = hwc2_compat_display_create_layer(hwc_display->hwc2_compat_display);
+
+    hwc_display->lastPresentFence = -1;
+
+    hwc2_compat_layer_set_composition_type(hwc_display->hwc2_compat_layer, HWC2_COMPOSITION_CLIENT);
+    hwc2_compat_layer_set_blend_mode(hwc_display->hwc2_compat_layer, HWC2_BLEND_MODE_NONE);
+    hwc2_compat_layer_set_source_crop(hwc_display->hwc2_compat_layer, 0.0f, 0.0f, hwc_display->width, hwc_display->height);
+    hwc2_compat_layer_set_display_frame(hwc_display->hwc2_compat_layer, 0, 0, hwc_display->width, hwc_display->height);
+    hwc2_compat_layer_set_visible_region(hwc_display->hwc2_compat_layer, 0, 0, hwc_display->width, hwc_display->height);
+
 	if (hwc->hwcVersion < HWC_DEVICE_API_VERSION_2_0) {
         hwc_display->win = HWCNativeWindowCreate(hwc_display->width, hwc_display->height, HAL_PIXEL_FORMAT_RGBA_8888, present, hwc_display);
 	} else {

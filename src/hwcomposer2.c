@@ -120,16 +120,6 @@ Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr display, hwc2_compat_de
 	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init width: %i height: %i, id: %d\n", display->width, display->height, id);
 	free(config);
 
-	hwc2_compat_layer_t* layer = display->hwc2_compat_layer = hwc2_compat_display_create_layer(display->hwc2_compat_display);
-
-	display->lastPresentFence = -1;
-
-	hwc2_compat_layer_set_composition_type(layer, HWC2_COMPOSITION_CLIENT);
-	hwc2_compat_layer_set_blend_mode(layer, HWC2_BLEND_MODE_NONE);
-	hwc2_compat_layer_set_source_crop(layer, 0.0f, 0.0f, config->width, config->height);
-	hwc2_compat_layer_set_display_frame(layer, 0, 0, config->width, config->height);
-	hwc2_compat_layer_set_visible_region(layer, 0, 0, config->width, config->height);
-
 	return TRUE;
 }
 
