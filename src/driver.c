@@ -526,11 +526,6 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 		return FALSE;
 	}
 
-//	if (!hwc_egl_renderer_init(pScrn, &hwc->external_display, do_glamor)) {
-//		xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "failed to initialize external EGL renderer\n");
-//		return FALSE;
-//	}
-
     if (!hwc_init_hybris_native_buffer(pScrn)) {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                     "failed to initialize libhybris native buffer EGL extension\n");
