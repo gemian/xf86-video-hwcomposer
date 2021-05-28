@@ -148,7 +148,6 @@ typedef struct {
 	//hwc v2 items
 	hwc2_compat_display_t* hwc2_compat_display;
 	hwc2_compat_layer_t* hwc2_compat_layer;
-	int lastPresentFence;
 } hwc_display_rec, *hwc_display_ptr;
 
 typedef struct udev_switches_data

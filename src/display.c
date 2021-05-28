@@ -7,6 +7,8 @@
 #include <xf86.h>
 #include "xf86Crtc.h"
 #include <X11/Xatom.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #ifdef ENABLE_GLAMOR
 #define GLAMOR_FOR_XORG 1
@@ -713,6 +715,20 @@ hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
     pthread_mutex_unlock(&(hwc->dirtyLock));
 }
 
+static void trigger_uevent(const char *path) {
+    struct stat buffer;
+    int fd;
+    const char buf[] = "add\n";
+
+    if (stat(path, &buffer) == 0) {
+        fd = open(path, O_WRONLY);
+        if (fd >= 0) {
+            write(fd, buf, strlen(buf));
+            close(fd);
+        }
+    }
+}
+
 Bool
 hwc_display_pre_init(ScrnInfoPtr pScrn) {
     ScreenPtr pScreen = pScrn->pScreen;
@@ -757,9 +773,9 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
     if (hwc->device_open > 0) {
         hwc->connected_outputs |= 1 << 0;
     }
-    if (hwc->usb_hdmi_plugged > 0) {
-        hwc->connected_outputs |= 1 << 1;
-    }
+//    if (hwc->usb_hdmi_plugged > 0) {
+//        hwc->connected_outputs |= 1 << 1;
+//    }
 
     // Pick rotated HWComposer screen resolution
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init primary picked\n");
@@ -778,6 +794,8 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
                pScrn->display->virtualX, pScrn->virtualX, pScrn->virtualY, hwc->connected_outputs);
 
     pScrn->currentMode = pScrn->modes;
+
+    trigger_uevent("/sys/class/switch/usb_hdmi/state");
 
     return TRUE;
 }

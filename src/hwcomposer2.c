@@ -142,8 +142,6 @@ Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, hwc2_compa
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init created layer\n");
 
-    hwc_display->lastPresentFence = -1;
-
     hwc2_compat_layer_set_composition_type(hwc_display->hwc2_compat_layer, HWC2_COMPOSITION_CLIENT);
     hwc2_compat_layer_set_blend_mode(hwc_display->hwc2_compat_layer, HWC2_BLEND_MODE_NONE);
     hwc2_compat_layer_set_source_crop(hwc_display->hwc2_compat_layer, 0.0f, 0.0f, hwc_display->width,
@@ -220,6 +218,8 @@ void hwc_hwcomposer2_close(ScrnInfoPtr pScrn)
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer2_close\n");
 }
 
+int lastPresentFence = -1;
+
 void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
                              struct ANativeWindowBuffer *buffer)
 {
@@ -233,18 +233,18 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 
     error = hwc2_compat_display_validate(hwc2_compat_display, &numTypes, &numRequests);
     if (error != HWC2_ERROR_NONE && error != HWC2_ERROR_HAS_CHANGES) {
-        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate failed: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate failed: %d\n", error);
         return;
     }
 
     if (numTypes || numRequests) {
-        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate required changes: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: validate required changes: %d\n", error);
         return;
     }
 
     error = hwc2_compat_display_accept_changes(hwc2_compat_display);
     if (error != HWC2_ERROR_NONE) {
-        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: acceptChanges failed: %d", error);
+        xf86DrvMsg(hwc_display->index, X_ERROR, "prepare: acceptChanges failed: %d\n", error);
         return;
     }
 
@@ -269,12 +269,12 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 //        setFenceBufferFd(buffer, fenceFd);
 //    hwc2_compat_out_fences_destroy(fences);
 
-    if (hwc_display->lastPresentFence != -1) {
-        sync_wait(hwc_display->lastPresentFence, -1);
-        close(hwc_display->lastPresentFence);
+    if (lastPresentFence != -1) {
+        sync_wait(lastPresentFence, -1);
+        close(lastPresentFence);
     }
 
-    hwc_display->lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
+    lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
 
     HWCNativeBufferSetFence(buffer, presentFence);
 }
@@ -291,10 +291,10 @@ void hwc_set_power_mode_hwcomposer2(ScrnInfoPtr pScrn, int disp, int mode)
         hwc_display = &hwc->external_display;
     }
 
-    if (mode == DPMSModeOff && hwc_display->lastPresentFence != -1) {
-        sync_wait(hwc_display->lastPresentFence, -1);
-        close(hwc_display->lastPresentFence);
-        hwc_display->lastPresentFence = -1;
+    if (mode == DPMSModeOff && lastPresentFence != -1) {
+        sync_wait(lastPresentFence, -1);
+        close(lastPresentFence);
+        lastPresentFence = -1;
     }
 
     if (mode == DPMSModeOn) {

@@ -489,7 +489,7 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     hwc->udev_switches.pScrn = pScrn;
     init_udev_switches(&hwc->udev_switches);
     hwc->device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
-    hwc->usb_hdmi_plugged = read_int_from_file(pScrn, "/sys/class/switch/usb_hdmi/state");
+//    hwc->usb_hdmi_plugged = read_int_from_file(pScrn, "/sys/class/switch/usb_hdmi/state");
     hwc->primary_display.dpmsMode = DPMSModeOff;
 
     hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
