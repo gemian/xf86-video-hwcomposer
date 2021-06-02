@@ -47,7 +47,7 @@ void hwc2_callback_hotplug(HWC2EventListener *listener, int32_t sequenceId,
     if (!primaryDisplay) {
         hwc->external_display_id = display_id;
         hwc->connected_outputs = connected ? 0b11 : 1; //bitmask
-        hwc_trigger_redraw(pScrn, &hwc->external_display);
+//        hwc_trigger_redraw(pScrn);
     }
     hwc2_compat_device_on_hotplug(hwc->hwc2Device, display_id, connected);
 }
@@ -160,14 +160,23 @@ Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, hwc2_compa
 
     if (hwc->egl_display == NULL) {
         hwc->egl_display = eglGetDisplay(NULL);
+        if (eglGetError() != EGL_SUCCESS || hwc->egl_display == EGL_NO_DISPLAY) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init eglGetDisplay eglGetError: %d, egl_display: %p\n", eglGetError(), hwc->egl_display);
+        }
         assert(eglGetError() == EGL_SUCCESS);
         assert(hwc->egl_display != EGL_NO_DISPLAY);
 
         rv = eglInitialize(hwc->egl_display, 0, 0);
+        if (eglGetError() != EGL_SUCCESS || rv != EGL_TRUE) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init eglInitialize eglGetError: %d, rv: %d\n", eglGetError(), rv);
+        }
         assert(eglGetError() == EGL_SUCCESS);
         assert(rv == EGL_TRUE);
 
         eglChooseConfig((EGLDisplay) hwc->egl_display, egl_attr, &hwc->egl_cfg, 1, &num_config);
+        if (eglGetError() != EGL_SUCCESS || rv != EGL_TRUE) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init eglChooseConfig eglGetError: %d, rv: %d\n", eglGetError(), rv);
+        }
         assert(eglGetError() == EGL_SUCCESS);
         assert(rv == EGL_TRUE);
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init eglGetDisplay+eglChooseConfig done eglD: %p\n", hwc->egl_display);
@@ -274,6 +283,9 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
         close(lastPresentFence);
     }
 
+//    if (presentFence != -1) {
+//        lastPresentFence = dup(presentFence);
+//    }
     lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
 
     HWCNativeBufferSetFence(buffer, presentFence);

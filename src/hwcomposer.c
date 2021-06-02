@@ -52,7 +52,7 @@ void hwc_set_power_mode(ScrnInfoPtr pScrn, int disp, int mode)
         }
         hw_device_t * hwcDevice = &hwcDevicePtr->common;
 
-        if (hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_5 || hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_5) {
+        if (hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_4 || hwc->hwcVersion == HWC_DEVICE_API_VERSION_1_5) {
             hwcDevicePtr->setPowerMode(hwcDevicePtr, disp,
                                        (mode == DPMSModeOn) ? HWC_POWER_MODE_NORMAL : HWC_POWER_MODE_OFF);
         } else {
@@ -95,6 +95,9 @@ Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn)
 
     hw_module_t *hwcModule = 0;
     err = hw_get_module(HWC_HARDWARE_MODULE_ID, (const hw_module_t **) &hwcModule);
+    if (err != 0) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer_init hw_get_module err: %d\n", err);
+    }
     assert(err == 0);
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "== hwcomposer module ==\n");
@@ -126,6 +129,9 @@ Bool hwc_hwcomposer_init(ScrnInfoPtr pScrn)
     size_t numConfigs = 5;
 
     err = hwcDevicePtr->getDisplayConfigs(hwcDevicePtr, HWC_DISPLAY_PRIMARY, configs, &numConfigs);
+    if (err != 0) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer_init getDisplayConfigs err: %d\n", err);
+    }
     assert(err == 0);
 
     int32_t attr_values[2];
@@ -224,6 +230,8 @@ void hwc_hwcomposer_close(ScrnInfoPtr pScrn)
 {
     HWCPtr hwc = HWCPTR(pScrn);
 
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_hwcomposer_close\n");
+
     close_udev_switches(&hwc->udev_switches);
 }
 
@@ -243,9 +251,15 @@ void present(void *user_data, struct ANativeWindow *window,
     fblayer->acquireFenceFd = HWCNativeBufferGetFence(buffer);
     fblayer->releaseFenceFd = -1;
     int err = hwcdevice->prepare(hwcdevice, HWC_NUM_DISPLAY_TYPES, contents);
+    if (err != 0) {
+        xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "present prepare err: %d\n", err);
+    }
     assert(err == 0);
 
     err = hwcdevice->set(hwcdevice, HWC_NUM_DISPLAY_TYPES, contents);
+    if (err != 0) {
+        xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "present hwcdevice->set err: %d\n", err);
+    }
     /* in Android, SurfaceFlinger ignores the return value as not all
         display types may be supported */
     HWCNativeBufferSetFence(buffer, fblayer->releaseFenceFd);

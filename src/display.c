@@ -49,6 +49,9 @@ void hwc_lights_close(ScrnInfoPtr pScrn) {
     HWCPtr hwc = HWCPTR(pScrn);
     hw_module_t *lightsModule = NULL;
 
+    if (hwc->lightsDevice == NULL) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_lights_close lightsDevice: %p\n", hwc->lightsDevice);
+    }
     assert(hwc->lightsDevice);
 
     hwc->lightsDevice->common.close((hw_device_t *) hwc->lightsDevice);
@@ -61,22 +64,42 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
     PixmapPtr pPixmap = pScreen->GetScreenPixmap(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
     void *pixels = NULL;
-    hwc_display_ptr hwc_display = &hwc->primary_display;
+//    hwc_display_ptr hwc_display = &hwc->primary_display;
     uint64_t cbLine = (width * xf86GetBppFromDepth(pScrn, pScrn->depth) / 8 + 3) & ~3;
     int displayWidth = cbLine * 8 / xf86GetBppFromDepth(pScrn, pScrn->depth);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap in X: %d, Y: %d, dW: %d, rotation: %d\n",
-               pScrn->virtualX, pScrn->virtualY, pScrn->displayWidth, hwc_display->pCrtc->rotation);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap in virtualX: %d, virtualY: %d, dW: %d\n",
+               pScrn->virtualX, pScrn->virtualY, pScrn->displayWidth);
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap target W: %d, H: %d, dW: %d\n", width,
                height, displayWidth);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
-               "AdjustScreenPixmap screen w: %d, h: %d, cBx1: %d, cBy1: %d, cBx2: %d, cBy2: %d\n",
-               pScreen->width, pScreen->height, hwc_display->pCrtc->bounds.x1, hwc_display->pCrtc->bounds.y1,
-               hwc_display->pCrtc->bounds.x2, hwc_display->pCrtc->bounds.y2);
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+//               "AdjustScreenPixmap screen w: %d, h: %d, cBx1: %d, cBy1: %d, cBx2: %d, cBy2: %d\n",
+//               pScreen->width, pScreen->height, hwc_display->pCrtc->bounds.x1, hwc_display->pCrtc->bounds.y1,
+//               hwc_display->pCrtc->bounds.x2, hwc_display->pCrtc->bounds.y2);
 
     if (width == pScrn->virtualX && height == pScrn->virtualY && displayWidth == pScrn->displayWidth) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap no change\n");
         return TRUE;
+    }
+
+    if (hwc->damage) {
+        DamageUnregister(hwc->damage);
+        DamageDestroy(hwc->damage);
+        hwc->damage = NULL;
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking tidied up\n");
+    }
+
+    if (hwc->glamor) {
+        if (pPixmap) {
+            pScreen->DestroyPixmap(pPixmap);
+        }
+        pPixmap = glamor_create_pixmap(pScreen,
+                                       width,
+                                       height,
+                                       pScrn->depth,
+                                       GLAMOR_CREATE_NO_LARGE);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Created glamor screen pixmap: %p\n", pPixmap);
+        pScreen->SetScreenPixmap(pPixmap);
     }
 
     if (!pPixmap) {
@@ -84,57 +107,56 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
         return FALSE;
     }
 
-    pthread_mutex_lock(&(hwc->rendererLock));
-    pthread_mutex_lock(&(hwc->dirtyLock));
-
-    if (hwc_display->buffer != NULL) {
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc_display->buffer);
-        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc_display->buffer);
-        hwc_display->buffer = NULL;
+    if (hwc->buffer != NULL) {
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->buffer);
+        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->buffer);
+        hwc->buffer = NULL;
     }
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Released buffer\n");
 
     pScreen->ModifyPixmapHeader(pPixmap, width, height,
                                 pScrn->depth, xf86GetBppFromDepth(pScrn, pScrn->depth), cbLine,
                                 pPixmap->devPrivate.ptr);
-    pScrn->virtualX = width;
-    pScrn->virtualY = height;
+//    pScrn->virtualX = width;
+//    pScrn->virtualY = height;
     pScrn->displayWidth = displayWidth;
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Modified Pixmap Header\n");
 
     int err = hwc->egl_proc.eglHybrisCreateNativeBuffer(width, height,
                                                         HYBRIS_USAGE_HW_TEXTURE |
                                                         HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
                                                         HYBRIS_PIXEL_FORMAT_RGBA_8888,
-                                                        &hwc_display->stride, &hwc_display->buffer);
+                                                        &hwc->stride, &hwc->buffer);
 
-    if (hwc->glamor && !hwc_display->hwc_renderer.rootTexture) {
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "eglHybrisCreateNativeBuffer\n");
+
+    if (hwc->glamor) {
 #ifdef ENABLE_GLAMOR
-        hwc_display->hwc_renderer.rootTexture = glamor_get_pixmap_texture(pPixmap);
+        hwc->rootTexture = glamor_get_pixmap_texture(pPixmap);
 #endif
     }
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "glamor_get_pixmap_texture\n");
 
-    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc_display->buffer,
+    hwc->height = height;
+    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc->buffer,
                                                   HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
-                                                  0, 0, hwc_display->stride, height, &pixels);
+                                                  0, 0, hwc->stride, hwc->height, &pixels);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "eglHybrisLockNativeBuffer\n");
 
-    if (!hwc_display->damage) {
-        hwc_display->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, pPixmap);
-        DamageRegister(&pPixmap->drawable, hwc_display->damage);
-        hwc_display->dirty = FALSE;
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking initialized\n");
-    }
-
-    if (!hwc_display->damage) {
+    hwc->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, pPixmap);
+    if (!hwc->damage) {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create screen damage record\n");
         return FALSE;
     }
+    DamageRegister(&pPixmap->drawable, hwc->damage);
+    hwc->dirty = FALSE;
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Damage tracking initialized\n");
 
     hwc->wasRotated = TRUE;
 
-    pthread_mutex_unlock(&(hwc->dirtyLock));
-    pthread_mutex_unlock(&(hwc->rendererLock));
-    hwc_trigger_redraw(pScrn, hwc_display);
-
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap out X: %d, Y: %d, dW: %d\n", pScrn->virtualX,
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap out virtualX: %d, virtualY: %d, displayWidth: %d\n", pScrn->virtualX,
                pScrn->virtualY, pScrn->displayWidth);
 
     return TRUE;
@@ -142,6 +164,8 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
 
 static Bool
 hwc_xf86crtc_resize(ScrnInfoPtr pScrn, int cw, int ch) {
+    HWCPtr hwc = HWCPTR(pScrn);
+
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_xf86crtc_resize cw: %d, ch: %d, xDpi: %d, yDpi: %d\n", cw, ch,
                pScrn->xDpi, pScrn->yDpi);
     if (!pScrn->vtSema) {
@@ -149,7 +173,16 @@ hwc_xf86crtc_resize(ScrnInfoPtr pScrn, int cw, int ch) {
                    "We do not own the active VT, exiting.\n");
         return TRUE;
     }
-    return AdjustScreenPixmap(pScrn, cw, ch);
+
+    pthread_mutex_lock(&(hwc->rendererLock));
+    pthread_mutex_lock(&(hwc->dirtyLock));
+
+    Bool ret = AdjustScreenPixmap(pScrn, cw, ch);
+
+    pthread_mutex_unlock(&(hwc->dirtyLock));
+    pthread_mutex_unlock(&(hwc->rendererLock));
+    hwc_trigger_redraw(pScrn);
+    return ret;
 }
 
 static const xf86CrtcConfigFuncsRec hwc_xf86crtc_config_funcs = {
@@ -242,77 +275,77 @@ dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height) {
     return NULL;
 }
 
-PixmapPtr
-get_crtc_pixmap(hwc_display_ptr hwc_display) {
-    PixmapPtr crtcPixmap;
-    void *pixels = NULL;
-    xf86CrtcPtr crtc = hwc_display->pCrtc;
-    HWCPtr hwc = HWCPTR(crtc->scrn);
-    int index = (int64_t) crtc->driver_private;
-    int width = xf86ModeWidth(&crtc->mode, crtc->rotation);
-    int height = xf86ModeHeight(&crtc->mode, crtc->rotation);
-
-    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "get_crtc_pixmap width: %d, height: %d, index: %d\n", width,
-               height, index);
-
-    crtcPixmap = crtc->scrn->pScreen->GetScreenPixmap(crtc->scrn->pScreen);
-    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "got pixmap: %p, index: %d\n", crtcPixmap, index);
-
-#ifdef ENABLE_GLAMOR
-    if (hwc->glamor) {
-        if (crtcPixmap) {
-            crtc->scrn->pScreen->DestroyPixmap(crtcPixmap);
-        }
-        crtcPixmap = glamor_create_pixmap(crtc->scrn->pScreen,
-                                            width,
-                                            height,
-                                            crtc->scrn->pScreen->rootDepth,//PIXMAN_FORMAT_DEPTH(HYBRIS_PIXEL_FORMAT_RGBA_8888),
-                                            GLAMOR_CREATE_NO_LARGE);
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap, index: %d\n", index);
-        crtc->scrn->pScreen->SetScreenPixmap(crtcPixmap);
-    }
-#endif
-
-    int err = hwc->egl_proc.eglHybrisCreateNativeBuffer(width, height,
-                                                        HYBRIS_USAGE_HW_TEXTURE |
-                                                        HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
-                                                        HYBRIS_PIXEL_FORMAT_RGBA_8888,
-                                                        &hwc_display->stride, &hwc_display->buffer);
-
-    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "alloc: status=%d, stride=%d\n", err, hwc_display->stride);
-
-    if (hwc->glamor) {
-#ifdef ENABLE_GLAMOR
-        hwc_display->hwc_renderer.rootTexture = glamor_get_pixmap_texture(crtcPixmap);
-#endif
-    }
-
-    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc_display->buffer,
-                                                  HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
-                                                  0, 0, hwc_display->stride, height, &pixels);
-
-    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "gralloc lock returns %i, lock to vaddr %p, index: %d\n", err, pixels,
-               index);
-
-    if (!hwc->glamor) {
-        if (!crtc->scrn->pScreen->ModifyPixmapHeader(crtcPixmap, -1, -1, -1, -1, hwc_display->stride * 4, pixels)) {
-            FatalError("Couldn't adjust screen pixmap, index: %d\n", index);
-        }
-    }
-
-    hwc_display->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, crtc->scrn->pScreen, crtcPixmap);
-
-    if (hwc_display->damage) {
-        DamageRegister(&crtcPixmap->drawable, hwc_display->damage);
-        hwc_display->dirty = FALSE;
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "Damage tracking initialized, index: %d\n", index);
-    } else {
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_ERROR, "Failed to create screen damage record, index: %d\n", index);
-        return FALSE;
-    }
-
-    return crtcPixmap;
-}
+//PixmapPtr
+//get_crtc_pixmap(hwc_display_ptr hwc_display) {
+//    PixmapPtr crtcPixmap;
+//    void *pixels = NULL;
+//    xf86CrtcPtr crtc = hwc_display->pCrtc;
+//    HWCPtr hwc = HWCPTR(crtc->scrn);
+//    int index = (int64_t) crtc->driver_private;
+//    int width = xf86ModeWidth(&crtc->mode, crtc->rotation);
+//    int height = xf86ModeHeight(&crtc->mode, crtc->rotation);
+//
+//    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "get_crtc_pixmap width: %d, height: %d, index: %d\n", width,
+//               height, index);
+//
+//    crtcPixmap = crtc->scrn->pScreen->GetScreenPixmap(crtc->scrn->pScreen);
+//    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "got pixmap: %p, index: %d\n", crtcPixmap, index);
+//
+//#ifdef ENABLE_GLAMOR
+//    if (hwc->glamor) {
+//        if (crtcPixmap) {
+//            crtc->scrn->pScreen->DestroyPixmap(crtcPixmap);
+//        }
+//        crtcPixmap = glamor_create_pixmap(crtc->scrn->pScreen,
+//                                            width,
+//                                            height,
+//                                            crtc->scrn->pScreen->rootDepth,//PIXMAN_FORMAT_DEPTH(HYBRIS_PIXEL_FORMAT_RGBA_8888),
+//                                            GLAMOR_CREATE_NO_LARGE);
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap, index: %d\n", index);
+//        crtc->scrn->pScreen->SetScreenPixmap(crtcPixmap);
+//    }
+//#endif
+//
+//    int err = hwc->egl_proc.eglHybrisCreateNativeBuffer(width, height,
+//                                                        HYBRIS_USAGE_HW_TEXTURE |
+//                                                        HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
+//                                                        HYBRIS_PIXEL_FORMAT_RGBA_8888,
+//                                                        &hwc_display->stride, &hwc_display->buffer);
+//
+//    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "alloc: status=%d, stride=%d\n", err, hwc_display->stride);
+//
+//    if (hwc->glamor) {
+//#ifdef ENABLE_GLAMOR
+//        hwc_display->hwc_renderer.rootTexture = glamor_get_pixmap_texture(crtcPixmap);
+//#endif
+//    }
+//
+//    err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc_display->buffer,
+//                                                  HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
+//                                                  0, 0, hwc_display->stride, height, &pixels);
+//
+//    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "gralloc lock returns %i, lock to vaddr %p, index: %d\n", err, pixels,
+//               index);
+//
+//    if (!hwc->glamor) {
+//        if (!crtc->scrn->pScreen->ModifyPixmapHeader(crtcPixmap, -1, -1, -1, -1, hwc_display->stride * 4, pixels)) {
+//            FatalError("Couldn't adjust screen pixmap, index: %d\n", index);
+//        }
+//    }
+//
+//    hwc_display->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, crtc->scrn->pScreen, crtcPixmap);
+//
+//    if (hwc_display->damage) {
+//        DamageRegister(&crtcPixmap->drawable, hwc_display->damage);
+//        hwc_display->dirty = FALSE;
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "Damage tracking initialized, index: %d\n", index);
+//    } else {
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_ERROR, "Failed to create screen damage record, index: %d\n", index);
+//        return FALSE;
+//    }
+//
+//    return crtcPixmap;
+//}
 
 void
 dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data) {
@@ -329,26 +362,26 @@ dummy_crtc_shadow_destroy(xf86CrtcPtr crtc, PixmapPtr pPixmap, void *data) {
                data, index);
 }
 
-void
-crtc_pixmap_destroy(hwc_display_ptr hwc_display, PixmapPtr pPixmap) {
-    HWCPtr hwc = HWCPTR(hwc_display->pCrtc->scrn);
-
-    if (pPixmap) {
-        pPixmap->drawable.pScreen->DestroyPixmap(pPixmap);
-    }
-
-    if (hwc_display->damage) {
-        DamageUnregister(hwc_display->damage);
-        DamageDestroy(hwc_display->damage);
-        hwc_display->damage = NULL;
-    }
-
-    if (hwc_display->buffer != NULL) {
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc_display->buffer);
-        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc_display->buffer);
-        hwc_display->buffer = NULL;
-    }
-}
+//void
+//crtc_pixmap_destroy(hwc_display_ptr hwc_display, PixmapPtr pPixmap) {
+//    HWCPtr hwc = HWCPTR(hwc_display->pCrtc->scrn);
+//
+//    if (pPixmap) {
+//        pPixmap->drawable.pScreen->DestroyPixmap(pPixmap);
+//    }
+//
+//    if (hwc_display->damage) {
+//        DamageUnregister(hwc_display->damage);
+//        DamageDestroy(hwc_display->damage);
+//        hwc_display->damage = NULL;
+//    }
+//
+//    if (hwc_display->buffer != NULL) {
+//        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc_display->buffer);
+//        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc_display->buffer);
+//        hwc_display->buffer = NULL;
+//    }
+//}
 
 static void
 dummy_crtc_mode_set(xf86CrtcPtr crtc, DisplayModePtr mode,
@@ -375,8 +408,8 @@ hwc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode, Rotation rotation, int
         hwc_display = &hwc->external_display;
     }
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO,
-               "hwc_set_mode_major as setting x: %d, y: %d, rotation: %d, initialR: %d, driverIsPerformingTransform: %d, index: %d\n",
-               x, y, rotation, hwc_display->pOutput->initial_rotation, crtc->driverIsPerformingTransform, index);
+               "hwc_set_mode_major as setting x: %d, y: %d, desiredX: %d, desiredY: %d, rotation: %d, initialR: %d, driverIsPerformingTransform: %d, index: %d\n",
+               x, y, crtc->desiredX, crtc->desiredY, rotation, hwc_display->pOutput->initial_rotation, crtc->driverIsPerformingTransform, index);
 
     if (hwc_display->rotationOnFirstSetMode) {
         crtc->rotation = hwc_display->pOutput->initial_rotation;
@@ -422,7 +455,7 @@ hwc_set_cursor_position(xf86CrtcPtr crtc, int x, int y) {
 
     hwc_display->cursorX = x;
     hwc_display->cursorY = y;
-    hwc_trigger_redraw(crtc->scrn, hwc_display);
+    hwc_trigger_redraw(crtc->scrn);
 }
 
 /*
@@ -451,7 +484,7 @@ hwc_load_cursor_argb_check(xf86CrtcPtr crtc, CARD32 *image) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, hwc->cursorWidth, hwc->cursorHeight,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, image);
 
-    hwc_trigger_redraw(crtc->scrn, hwc_display);
+    hwc_trigger_redraw(crtc->scrn);
     return TRUE;
 }
 
@@ -470,7 +503,7 @@ hwc_hide_cursor(xf86CrtcPtr crtc) {
 
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_hide_cursor index: %d\n", index);
 
-    hwc_trigger_redraw(crtc->scrn, hwc_display);
+    hwc_trigger_redraw(crtc->scrn);
 }
 
 static void
@@ -488,7 +521,7 @@ hwc_show_cursor(xf86CrtcPtr crtc) {
 
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "hwc_show_cursor index: %d\n", index);
 
-    hwc_trigger_redraw(crtc->scrn, hwc_display);
+    hwc_trigger_redraw(crtc->scrn);
 }
 
 static const xf86CrtcFuncsRec hwcomposer_crtc_funcs = {
@@ -556,7 +589,7 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
     xf86DrvMsg(output->scrn->scrnIndex, X_INFO, "hwc_output_dpms mode: %d, index: %d, connected: %d\n", mode, index,
                hwc->connected_outputs & (1 << index));
 
-    if (index == 1 && !(hwc->connected_outputs & (1 << index))) {
+    if (index == 1 && !(hwc->connected_outputs & (1 << index) && hwc->external_initialised)) {
         return;
     }
 
@@ -565,7 +598,7 @@ hwc_output_dpms(xf86OutputPtr output, int mode) {
     if (mode != DPMSModeOn) {
         // Wait for the renderer thread to finish to avoid causing locks
         pthread_mutex_lock(&(hwc->dirtyLock));
-        hwc_display->dirty = FALSE;
+        hwc->dirty = FALSE;
         pthread_mutex_unlock(&(hwc->dirtyLock));
     }
 
@@ -592,7 +625,7 @@ hwc_output_set_mode(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, int index, i
 
     if (mode == DPMSModeOn) {
         // Force redraw after unblank
-        hwc_trigger_redraw(pScrn, hwc_display);
+        hwc_trigger_redraw(pScrn);
     }
 }
 
@@ -645,7 +678,7 @@ hwc_output_detect(xf86OutputPtr output) {
     }
 }
 
-static DisplayModePtr
+DisplayModePtr
 hwc_output_get_modes(xf86OutputPtr output) {
     HWCPtr hwc = HWCPTR(output->scrn);
     int index = (int64_t) output->driver_private;
@@ -702,15 +735,15 @@ static const xf86OutputFuncsRec hwcomposer_output_funcs = {
 };
 
 void
-hwc_trigger_redraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
+hwc_trigger_redraw(ScrnInfoPtr pScrn) {
     HWCPtr hwc = HWCPTR(pScrn);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw display: %p, dirty: %d, extId: %ld\n", hwc_display, hwc_display->dirty, hwc->external_display_id);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_trigger_redraw dirty: %d\n", hwc->dirty);
 
-    if (hwc_display->dirty)
+    if (hwc->dirty)
         return;
 
     pthread_mutex_lock(&(hwc->dirtyLock));
-    hwc_display->dirty = TRUE;
+    hwc->dirty = TRUE;
     pthread_cond_signal(&(hwc->dirtyCond));
     pthread_mutex_unlock(&(hwc->dirtyLock));
 }
@@ -723,7 +756,7 @@ static void trigger_uevent(const char *path) {
     if (stat(path, &buffer) == 0) {
         fd = open(path, O_WRONLY);
         if (fd >= 0) {
-            write(fd, buf, strlen(buf));
+            int ret = write(fd, buf, strlen(buf));
             close(fd);
         }
     }
@@ -758,12 +791,12 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
                    (void *) outputPtr);
 
         if (i == 0) {
-            xf86OutputUseScreenMonitor(outputPtr, TRUE);
+//            xf86OutputUseScreenMonitor(outputPtr, TRUE);
             hwc->primary_display.pCrtc = crtcPtr;
             hwc->primary_display.pOutput = outputPtr;
             hwc->primary_display.rotationOnFirstSetMode = TRUE;
         } else {
-            xf86OutputUseScreenMonitor(outputPtr, FALSE);
+//            xf86OutputUseScreenMonitor(outputPtr, FALSE);
             hwc->external_display.pCrtc = crtcPtr;
             hwc->external_display.pOutput = outputPtr;
             hwc->external_display.rotationOnFirstSetMode = TRUE;
@@ -773,9 +806,9 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
     if (hwc->device_open > 0) {
         hwc->connected_outputs |= 1 << 0;
     }
-//    if (hwc->usb_hdmi_plugged > 0) {
-//        hwc->connected_outputs |= 1 << 1;
-//    }
+    if (hwc->usb_hdmi_plugged > 0) {
+        hwc_egl_renderer_external_power_up(pScrn);
+    }
 
     // Pick rotated HWComposer screen resolution
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_pre_init primary picked\n");

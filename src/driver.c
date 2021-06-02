@@ -407,6 +407,13 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     hwc = HWCPTR(pScrn);
     pScrn->monitor = pScrn->confScreen->monitor;
 
+    hwc->device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
+    hwc->usb_hdmi_plugged = read_int_from_file(pScrn, "/sys/class/switch/usb_hdmi/state");
+    if (hwc->usb_hdmi_plugged) {
+        hdmi_power_enable(FALSE);
+        hdmi_enable(FALSE);
+    }
+
     if (!xf86SetDepthBpp(pScrn, 0, 0, 0,  Support24bppFb | Support32bppFb))
         return FALSE;
     else {
@@ -488,9 +495,8 @@ PreInit(ScrnInfoPtr pScrn, int flags)
 
     hwc->udev_switches.pScrn = pScrn;
     init_udev_switches(&hwc->udev_switches);
-    hwc->device_open = read_int_from_file(pScrn, "/sys/class/switch/hall/state");
-//    hwc->usb_hdmi_plugged = read_int_from_file(pScrn, "/sys/class/switch/usb_hdmi/state");
     hwc->primary_display.dpmsMode = DPMSModeOff;
+    hwc->external_display.dpmsMode = DPMSModeOff;
 
     hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
 
@@ -624,19 +630,19 @@ void triggerGlamourEglFlush(HWCPtr hwc) {
     glFlush();
 }
 
-void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
+void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn) {
 	HWCPtr hwc = HWCPTR(pScrn);
 
-	if (hwc_display->damage && hwc_display->dpmsMode == DPMSModeOn) {
-        RegionPtr dirty = DamageRegion(hwc_display->damage);
+	if (hwc->damage && (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn)) {
+        RegionPtr dirty = DamageRegion(hwc->damage);
         unsigned num_cliprects = REGION_NUM_RECTS(dirty);
 
         if (num_cliprects) {
-            DamageEmpty(hwc_display->damage);
+            DamageEmpty(hwc->damage);
             if (hwc->glamor) {
                 triggerGlamourEglFlush(hwc);
             }
-            hwc_trigger_redraw(pScrn, hwc_display);
+            hwc_trigger_redraw(pScrn);
         }
     }
 }
@@ -651,9 +657,10 @@ static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
 
 //    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler\n");
 
-	checkDamageAndTriggerRedraw(pScrn, &hwc->primary_display);
-	checkDamageAndTriggerRedraw(pScrn, &hwc->external_display);
+    checkDamageAndTriggerRedraw(pScrn);
 }
+
+Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height);
 
 static Bool
 CreateScreenResources(ScreenPtr pScreen)
@@ -671,9 +678,14 @@ CreateScreenResources(ScreenPtr pScreen)
     ret = pScreen->CreateScreenResources(pScreen);
     pScreen->CreateScreenResources = CreateScreenResources;
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "upstream created - ret %d\n", ret);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "CreateScreenResources upstream created - ret %d\n", ret);
 
-    get_crtc_pixmap(&hwc->primary_display);
+//    xf86CrtcPtr crtc = hwc_display->pCrtc;
+//    HWCPtr hwc = HWCPTR(crtc->scrn);
+//    int width = xf86ModeWidth(&crtc->mode, crtc->rotation);
+//    int height = xf86ModeHeight(&crtc->mode, crtc->rotation);
+    ret = AdjustScreenPixmap(pScrn, pScreen->width, pScreen->height);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "CreateScreenResources adjusted screen pixmap - ret %d\n", ret);
 
     hwc->rendererIsRunning = 1;
 
@@ -687,29 +699,34 @@ CreateScreenResources(ScreenPtr pScreen)
     return ret;
 }
 
-static void checkDirtyAndRenderUpdate(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display) {
+static void checkDirtyAndRenderUpdate(ScrnInfoPtr pScrn) {
     HWCPtr hwc = HWCPTR(pScrn);
     PixmapPtr rootPixmap;
     int err;
-//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "checkDirtyAndRenderUpdate dirty: %d, dpms: %d\n", hwc_display->dirty, hwc_display->dpmsMode);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "checkDirtyAndRenderUpdate dirty: %d, pDpms: %d, eDpms: %d\n", hwc->dirty, hwc->primary_display.dpmsMode, hwc->external_display.dpmsMode);
 
-    if (hwc_display->dirty && hwc_display->dpmsMode == DPMSModeOn) {
+    if (hwc->dirty && (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn)) {
         void *pixels = NULL;
         rootPixmap = pScrn->pScreen->GetScreenPixmap(pScrn->pScreen);
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc_display->buffer);
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->buffer);
 
-        hwc_egl_renderer_update(pScrn->pScreen, hwc_display);
+        if (hwc->primary_display.dpmsMode == DPMSModeOn) {
+            hwc_egl_renderer_update(pScrn->pScreen, &hwc->primary_display);
+        }
+        if (hwc->external_display.dpmsMode == DPMSModeOn) {
+            hwc_egl_renderer_update(pScrn->pScreen, &hwc->external_display);
+        }
 
-        err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc_display->buffer,
+        err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc->buffer,
                         HYBRIS_USAGE_SW_READ_OFTEN|HYBRIS_USAGE_SW_WRITE_OFTEN,
-                        0, 0, hwc_display->stride, hwc_display->height, &pixels);
+                        0, 0, hwc->stride, hwc->height, &pixels);
 
         if (!hwc->glamor) {
             if (!pScrn->pScreen->ModifyPixmapHeader(rootPixmap, -1, -1, -1, -1, -1, pixels))
                 FatalError("Couldn't adjust screen pixmap\n");
         }
 
-        hwc_display->dirty = FALSE;
+        hwc->dirty = FALSE;
     }
 }
 
@@ -718,8 +735,7 @@ static CARD32 hwc_update_by_timer(OsTimerPtr timer, CARD32 time, void *ptr) {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
 
-    checkDirtyAndRenderUpdate(pScrn, &hwc->primary_display);
-    checkDirtyAndRenderUpdate(pScrn, &hwc->external_display);
+    checkDirtyAndRenderUpdate(pScrn);
 
     return TIMER_DELAY;
 }
@@ -740,7 +756,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     pScrn = xf86ScreenToScrn(pScreen);
     hwc = HWCPTR(pScrn);
 
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit myNum: %d, dpi: %d, width: %d\n", pScreen->myNum,pScrn->xDpi,pScrn->displayWidth);
+	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit myNum: %d, dpi: %d, displayWidth: %d\n", pScreen->myNum,pScrn->xDpi,pScrn->displayWidth);
 
     /*
      * Reset visual list.
@@ -764,10 +780,13 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
                        pScrn->virtualX, pScrn->virtualY,
                        pScrn->xDpi, pScrn->yDpi,
                        pScrn->displayWidth, pScrn->bitsPerPixel);
-    if (!ret)
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit fbScreenInit ret: %d, virtualX: %d, virtualY: %d\n", ret, pScrn->virtualX, pScrn->virtualY);
+    if (!ret) {
         return FALSE;
+    }
 
     if (pScrn->depth > 8) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit Fixup RGB ordering\n");
         /* Fixup RGB ordering */
         visual = pScreen->visuals + pScreen->numVisuals;
         while (--visual >= pScreen->visuals) {
@@ -918,22 +937,17 @@ CloseScreen(CLOSE_SCREEN_ARGS_DECL)
     }
 
     hwc->rendererIsRunning = 0;
-	hwc_trigger_redraw(pScrn, &hwc->primary_display);
+	hwc_trigger_redraw(pScrn);
 
     pthread_join(hwc->rendererThread, NULL);
     pthread_mutex_destroy(&(hwc->rendererLock));
     pthread_mutex_destroy(&(hwc->dirtyLock));
     pthread_cond_destroy(&(hwc->dirtyCond));
 
-    if (hwc->primary_display.buffer != NULL) {
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->primary_display.buffer);
-        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->primary_display.buffer);
-        hwc->primary_display.buffer = NULL;
-    }
-    if (hwc->external_display.buffer != NULL) {
-        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->external_display.buffer);
-        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->external_display.buffer);
-        hwc->external_display.buffer = NULL;
+    if (hwc->buffer != NULL) {
+        hwc->egl_proc.eglHybrisUnlockNativeBuffer(hwc->buffer);
+        hwc->egl_proc.eglHybrisReleaseNativeBuffer(hwc->buffer);
+        hwc->buffer = NULL;
     }
 
     if (hwc->primary_display.win  != NULL) {
