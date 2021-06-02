@@ -51,6 +51,6 @@ enum {
     HWC_CREATE_PIXMAP_DRIHYBRIS = 0x08000000,
 };
 
-extern Bool hwc_pixmap_init(ScreenPtr screen);
+extern Bool hwc_pixmap_init(ScrnInfoPtr pScrn);
 
 #endif /* HWC_PIXMAP_H */

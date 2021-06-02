@@ -90,6 +90,7 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
     }
 
     if (hwc->glamor) {
+#ifdef ENABLE_GLAMOR
         if (pPixmap) {
             pScreen->DestroyPixmap(pPixmap);
         }
@@ -100,10 +101,16 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
                                        GLAMOR_CREATE_NO_LARGE);
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Created glamor screen pixmap: %p\n", pPixmap);
         pScreen->SetScreenPixmap(pPixmap);
+#endif
     }
 
     if (!pPixmap) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to get the screen pixmap.\n");
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to get the screen pixmap. Creating.\n");
+        pPixmap = (*pScreen->CreatePixmap) (pScreen, width, height, pScrn->depth, 0);
+        pScreen->SetScreenPixmap(pPixmap);
+    }
+    if (!pPixmap) {
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create a new screen pixmap.\n");
         return FALSE;
     }
 
@@ -748,20 +755,6 @@ hwc_trigger_redraw(ScrnInfoPtr pScrn) {
     pthread_mutex_unlock(&(hwc->dirtyLock));
 }
 
-static void trigger_uevent(const char *path) {
-    struct stat buffer;
-    int fd;
-    const char buf[] = "add\n";
-
-    if (stat(path, &buffer) == 0) {
-        fd = open(path, O_WRONLY);
-        if (fd >= 0) {
-            int ret = write(fd, buf, strlen(buf));
-            close(fd);
-        }
-    }
-}
-
 Bool
 hwc_display_pre_init(ScrnInfoPtr pScrn) {
     ScreenPtr pScreen = pScrn->pScreen;
@@ -806,7 +799,7 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
     if (hwc->device_open > 0) {
         hwc->connected_outputs |= 1 << 0;
     }
-    if (hwc->usb_hdmi_plugged > 0) {
+    if (hwc->usb_hdmi_plugged > 0 && !hwc->external_initialised) {
         hwc_egl_renderer_external_power_up(pScrn);
     }
 
@@ -827,8 +820,6 @@ hwc_display_pre_init(ScrnInfoPtr pScrn) {
                pScrn->display->virtualX, pScrn->virtualX, pScrn->virtualY, hwc->connected_outputs);
 
     pScrn->currentMode = pScrn->modes;
-
-    trigger_uevent("/sys/class/switch/usb_hdmi/state");
 
     return TRUE;
 }

@@ -43,6 +43,9 @@
 #endif
 #include <hybris/hwcomposerwindow/hwcomposer.h>
 
+#include <sys/stat.h>
+#include <fcntl.h>
+
 /* These need to be checked */
 #include <X11/X.h>
 #include <X11/Xproto.h>
@@ -383,6 +386,20 @@ static int read_int_from_file(ScrnInfoPtr pScrn, const char *filename) {
     return (int)state_long;
 }
 
+static void trigger_uevent(const char *path) {
+    struct stat buffer;
+    int fd;
+    const char buf[] = "add\n";
+
+    if (stat(path, &buffer) == 0) {
+        fd = open(path, O_WRONLY);
+        if (fd >= 0) {
+            int ret = write(fd, buf, strlen(buf));
+            close(fd);
+        }
+    }
+}
+
 /* Mandatory */
 Bool
 PreInit(ScrnInfoPtr pScrn, int flags)
@@ -497,6 +514,7 @@ PreInit(ScrnInfoPtr pScrn, int flags)
     init_udev_switches(&hwc->udev_switches);
     hwc->primary_display.dpmsMode = DPMSModeOff;
     hwc->external_display.dpmsMode = DPMSModeOff;
+    trigger_uevent("/sys/class/switch/usb_hdmi/state");
 
     hwc_display_pre_init(pScrn); //xf86CrtcConfigInit + xf86CrtcSetSizeRange + crtc's + output's + xf86InitialConfiguration
 
@@ -814,6 +832,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
 
 	xf86SetBlackWhitePixels(pScreen);
 
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Wrap the current CreateScreenResources function.\n");
     hwc->CreateScreenResources = pScreen->CreateScreenResources;
     pScreen->CreateScreenResources = CreateScreenResources;
 
@@ -854,14 +873,15 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     }
 
 	pScreen->SaveScreen = SaveScreen;
-	
-    /* Wrap the current CloseScreen function */
+
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Wrap the current CloseScreen function.\n");
     hwc->CloseScreen = pScreen->CloseScreen;
     pScreen->CloseScreen = CloseScreen;
 	
     xf86DPMSInit(pScreen, xf86DPMSSet, 0);
 
     if (hwc->glamor) {
+#ifdef ENABLE_GLAMOR
         XF86VideoAdaptorPtr     glamor_adaptor;
 
         glamor_adaptor = glamor_xv_init(pScreen, 16);
@@ -869,12 +889,13 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
             xf86XVScreenInit(pScreen, &glamor_adaptor, 1);
         else
             xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to initialize XV support.\n");
+#endif
     } else {
         if (hwc->drihybris) {
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Initializing drihybris.\n");
             hwc_drihybris_screen_init(pScreen);
         }
-        hwc_pixmap_init(pScreen);
+        hwc_pixmap_init(pScrn);
     }
 
     /* Report any unused options (only for the first generation) */
