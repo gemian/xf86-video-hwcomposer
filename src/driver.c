@@ -320,15 +320,6 @@ try_enable_glamor(ScrnInfoPtr pScrn)
             xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                        "glamor-hybris primary initialization failed\n");
         }
-//		xf86DrvMsg(pScrn->scrnIndex, X_INFO, "try_enable_glamor - external\n");
-//        if (hwc_glamor_egl_init(pScrn, hwc->egl_display,
-//                hwc->external_display.hwc_renderer.context, EGL_NO_SURFACE)) {
-//            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "glamor-hybris external initialized\n");
-//            hwc->glamor = TRUE;
-//        } else {
-//            xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
-//                       "glamor-hybris external initialization failed\n");
-//        }
 
 #ifndef __ANDROID__
     } else {
@@ -830,11 +821,11 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     }
 #endif
 
-	xf86SetBlackWhitePixels(pScreen);
-
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Wrap the current CreateScreenResources function.\n");
     hwc->CreateScreenResources = pScreen->CreateScreenResources;
     pScreen->CreateScreenResources = CreateScreenResources;
+
+    xf86SetBlackWhitePixels(pScreen);
 
     xf86SetBackingStore(pScreen);
     xf86SetSilkenMouse(pScreen);

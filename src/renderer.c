@@ -323,7 +323,7 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
 
     glBindTexture(GL_TEXTURE_2D, hwc->rootTexture);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init - bound root texture\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init - bound root texture error: %d\n", eglGetError());
 
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
