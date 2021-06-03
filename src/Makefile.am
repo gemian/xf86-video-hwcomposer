@@ -45,4 +45,5 @@ hwcomposer_drv_la_SOURCES = \
          pixmap.h \
          present.c \
          renderer.c \
-         shaders.c
+         shaders.c \
+         switches.c

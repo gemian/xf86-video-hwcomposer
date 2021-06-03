@@ -127,12 +127,14 @@ Bool hwc_set_pixmap_buf(PixmapPtr pPix, EGLClientBuffer buf)
 }
 
 /* This should only be called when glamor is disabled */
-Bool hwc_pixmap_init(ScreenPtr screen)
+Bool hwc_pixmap_init(ScrnInfoPtr pScrn)
 {
-    if (!dixRegisterPrivateKey(&hwc_pixmap_index, PRIVATE_PIXMAP, 0))
+    if (!dixRegisterPrivateKey(&hwc_pixmap_index, PRIVATE_PIXMAP, 0)) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_pixmap_init dixRegisterPrivateKey failed\n");
         return FALSE;
+    }
 
-    screen->CreatePixmap = hwc_pixmap_create;
-    screen->DestroyPixmap = hwc_pixmap_destroy;
+    pScrn->pScreen->CreatePixmap = hwc_pixmap_create;
+    pScrn->pScreen->DestroyPixmap = hwc_pixmap_destroy;
     return TRUE;
 }
