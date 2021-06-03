@@ -102,13 +102,15 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Created glamor screen pixmap: %p\n", pPixmap);
         pScreen->SetScreenPixmap(pPixmap);
 #endif
-    }
-
-    if (!pPixmap) {
-        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to get the screen pixmap. Creating.\n");
-        pPixmap = (*pScreen->CreatePixmap) (pScreen, width, height, pScrn->depth, 0);
+    } else {
+        if (pPixmap) {
+            pScreen->DestroyPixmap(pPixmap);
+        }
+        pPixmap = (*pScreen->CreatePixmap)(pScreen, width, height, pScrn->depth, 0);
+        xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Created screen pixmap: %p\n", pPixmap);
         pScreen->SetScreenPixmap(pPixmap);
     }
+
     if (!pPixmap) {
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to create a new screen pixmap.\n");
         return FALSE;
@@ -125,8 +127,8 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
     pScreen->ModifyPixmapHeader(pPixmap, width, height,
                                 pScrn->depth, xf86GetBppFromDepth(pScrn, pScrn->depth), cbLine,
                                 pPixmap->devPrivate.ptr);
-//    pScrn->virtualX = width;
-//    pScrn->virtualY = height;
+    pScrn->virtualX = width;
+    pScrn->virtualY = height;
     pScrn->displayWidth = displayWidth;
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Modified Pixmap Header\n");

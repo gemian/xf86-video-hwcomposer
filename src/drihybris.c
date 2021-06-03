@@ -27,6 +27,8 @@ hwc_drihybris_pixmap_from_hybris_buffer(ScreenPtr screen,
     ScrnInfoPtr scrn = xf86ScreenToScrn(screen);
     HWCPtr hwc = HWCPTR(scrn);
 
+    xf86DrvMsg(scrn->scrnIndex, X_INFO, "hwc_drihybris_pixmap_from_hybris_buffer\n");
+
     pixmap = screen->CreatePixmap(screen, 0, 0, depth,
                                 HWC_CREATE_PIXMAP_DRIHYBRIS);
     if (!pixmap)
@@ -61,9 +63,10 @@ hwc_drihybris_screen_init(ScreenPtr screen)
     ScrnInfoPtr scrn = xf86ScreenToScrn(screen);
     HWCPtr hwc = HWCPTR(scrn);
 
+    xf86DrvMsg(scrn->scrnIndex, X_INFO, "hwc_drihybris_screen_init\n");
+
     if (!drihybris_screen_init(screen, &hwc_drihybris_screen_info)) {
-        xf86DrvMsg(scrn->scrnIndex, X_WARNING,
-            "drihybris_screen_init failed\n");
+        xf86DrvMsg(scrn->scrnIndex, X_WARNING, "drihybris_screen_init failed\n");
         return FALSE;
     }
 

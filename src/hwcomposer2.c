@@ -130,6 +130,7 @@ Bool hwc_display_init(ScrnInfoPtr pScrn, hwc_display_ptr hwc_display, hwc2_compa
 
     HWC2DisplayConfig *config = hwc2_compat_display_get_active_config(hwc_display->hwc2_compat_display);
     if (!config) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_display_init hwc2_compat_display_get_active_config failed\n");
         return FALSE;
     }
 
@@ -267,25 +268,11 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
     hwc2_compat_display_present(hwc2_compat_display, &presentFence);
     xf86DrvMsg(hwc_display->index, X_INFO, "hwc_present_hwcomposer2 pF: %d\n", presentFence);
 
-//    hwc2_compat_out_fences_t* fences;
-//    err = hwc2_compat_display_get_release_fences(display, &fences);
-//    if (err != HWC2_ERROR_NONE) {
-//        xf86DrvMsg(hwc_display->index, X_INFO, "hwc_present_hwcomposer2 presentAndGetReleaseFences: Failed to get release fences for display %d: %d\n", (uint32_t) display_id, err);
-//        return;
-//    }
-//    int fenceFd = hwc2_compat_out_fences_get_fence(fences, layer);
-//    if (fenceFd != -1)
-//        setFenceBufferFd(buffer, fenceFd);
-//    hwc2_compat_out_fences_destroy(fences);
-
     if (lastPresentFence != -1) {
         sync_wait(lastPresentFence, -1);
         close(lastPresentFence);
     }
 
-//    if (presentFence != -1) {
-//        lastPresentFence = dup(presentFence);
-//    }
     lastPresentFence = presentFence != -1 ? dup(presentFence) : -1;
 
     HWCNativeBufferSetFence(buffer, presentFence);

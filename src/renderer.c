@@ -349,7 +349,7 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
 
         hwc->rootShader.position = glGetAttribLocation(prog, "position");
         hwc->rootShader.texcoords = glGetAttribLocation(prog, "texcoords");
-        hwc->rootShader.transform = glGetUniformLocation(prog, "transform");
+        //hwc->rootShader.transform = glGetUniformLocation(prog, "transform");
         hwc->rootShader.texture = glGetUniformLocation(prog, "texture");
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init - created rootShader program\n");
     }
