@@ -144,15 +144,15 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
     if (hwc->glamor) {
 #ifdef ENABLE_GLAMOR
         hwc->rootTexture = glamor_get_pixmap_texture(pPixmap);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "glamor_get_pixmap_texture\n");
 #endif
     }
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "glamor_get_pixmap_texture\n");
 
     hwc->height = height;
     err = hwc->egl_proc.eglHybrisLockNativeBuffer(hwc->buffer,
                                                   HYBRIS_USAGE_SW_READ_OFTEN | HYBRIS_USAGE_SW_WRITE_OFTEN,
                                                   0, 0, hwc->stride, hwc->height, &pixels);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "eglHybrisLockNativeBuffer\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "eglHybrisLockNativeBuffer err:%d\n", err);
 
     hwc->damage = DamageCreate(NULL, NULL, DamageReportNone, TRUE, pScreen, pPixmap);
     if (!hwc->damage) {
@@ -165,8 +165,9 @@ Bool AdjustScreenPixmap(ScrnInfoPtr pScrn, int width, int height) {
 
     hwc->wasRotated = TRUE;
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "AdjustScreenPixmap out virtualX: %d, virtualY: %d, displayWidth: %d\n", pScrn->virtualX,
-               pScrn->virtualY, pScrn->displayWidth);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+               "AdjustScreenPixmap out virtualX: %d, virtualY: %d, displayWidth: %d, err: %d\n", pScrn->virtualX,
+               pScrn->virtualY, pScrn->displayWidth, err);
 
     return TRUE;
 }
@@ -295,17 +296,23 @@ dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height) {
 //    xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "get_crtc_pixmap width: %d, height: %d, index: %d\n", hwc_display->width,
 //               hwc_display->height, index);
 //
-//#ifdef ENABLE_GLAMOR
 //    if (hwc->glamor) {
+//#ifdef ENABLE_GLAMOR
 //        crtcPixmap = glamor_create_pixmap(crtc->scrn->pScreen,
 //                                            hwc_display->width,
 //                                            hwc_display->height,
 //                                            PIXMAN_FORMAT_DEPTH(HYBRIS_PIXEL_FORMAT_RGBA_8888),
 //                                            GLAMOR_CREATE_NO_LARGE);
-//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap, index: %d\n", index);
-//
-//    }
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap: %p, index: %d\n", crtcPixmap, index);
 //#endif
+//    } else {
+//        crtcPixmap = (*crtc->scrn->pScreen->CreatePixmap)(crtc->scrn->pScreen,
+//                                                          hwc_display->width,
+//                                                          hwc_display->height,
+//                                                          crtc->scrn->depth,
+//                                                          0);
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created pixmap: %p, index: %d\n", crtcPixmap, index);
+//    }
 //
 //    int err = hwc->egl_proc.eglHybrisCreateNativeBuffer(hwc_display->width, hwc_display->height,
 //                                                        HYBRIS_USAGE_HW_TEXTURE |
@@ -318,6 +325,7 @@ dummy_crtc_shadow_create(xf86CrtcPtr crtc, void *data, int width, int height) {
 //    if (hwc->glamor) {
 //#ifdef ENABLE_GLAMOR
 //        hwc_display->hwc_renderer.rootTexture = glamor_get_pixmap_texture(crtcPixmap);
+//        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "glamor_get_pixmap_texture\n");
 //#endif
 //    }
 //

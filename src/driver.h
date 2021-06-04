@@ -245,6 +245,8 @@ typedef struct HWCRec
 } HWCRec, *HWCPtr;
 
 void hwc_get_native_window(HWCPtr hwc, hwc_display_ptr hwc_display);
+DisplayModePtr hwc_output_get_modes(xf86OutputPtr output);
+void modeSetAndResize(ScreenPtr pScreen, ScrnInfoPtr pScrn);
 
 /* The privates of the hwcomposer driver */
 #define HWCPTR(p)    ((HWCPtr)((p)->driverPrivate))

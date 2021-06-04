@@ -148,9 +148,8 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
 
     if (!hwc->primary_display.win) {
         hwc_get_native_window(hwc, &hwc->primary_display);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created window: %p\n", hwc->primary_display.win);
     }
-
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init got native window\n");
 
     if (hwc->egl_display == NULL) {
         hwc->egl_display = eglGetDisplay(NULL);
@@ -276,6 +275,7 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
             hwc_display->height = 1080;
         }
         hwc_get_native_window(hwc, hwc_display);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created window: %p\n",hwc_display->win);
     }
 
 //    eglChooseConfig((EGLDisplay) hwc->egl_display, egl_attr, &hwc->egl_cfg, 1, &num_config);
@@ -512,10 +512,7 @@ void updateProjection(ScrnInfoPtr pScrn, int disp)
         hwc_ortho_2d(renderer->projection, 0.0f, display->width, 0.0f, display->height);
 }
 
-DisplayModePtr hwc_output_get_modes(xf86OutputPtr output);
-
-void *hwc_egl_renderer_thread(void *user_data)
-{
+void *hwc_egl_renderer_thread(void *user_data) {
     ScreenPtr pScreen = (ScreenPtr) user_data;
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
@@ -551,34 +548,22 @@ void *hwc_egl_renderer_thread(void *user_data)
         if ((hwc->connected_outputs & 2) && !hwc->external_initialised) {
             hwc_display_init(pScrn, &hwc->external_display, hwc->hwc2Device, hwc->external_display_id);
             Bool ret = xf86InitialConfiguration(pScrn, TRUE);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread xf86InitialConfiguration ret:%d, cOutput: %d\n", ret, hwc->connected_outputs);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+                       "hwc_egl_renderer_thread xf86InitialConfiguration ret:%d, cOutput: %d\n", ret,
+                       hwc->connected_outputs);
+
             xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(pScrn);
             xf86OutputPtr pOutputPtr = config->output[0];
             DisplayModePtr pMode = hwc_output_get_modes(pOutputPtr);
             xf86OutputPtr eOutputPtr = config->output[1];
             DisplayModePtr eMode = hwc_output_get_modes(eOutputPtr);
 
-            xf86CrtcSetMode(hwc->primary_display.pCrtc, pMode, pOutputPtr->initial_rotation, pOutputPtr->crtc->desiredX, pOutputPtr->crtc->desiredY);
-            xf86CrtcSetMode(hwc->external_display.pCrtc, eMode, eOutputPtr->initial_rotation, eOutputPtr->crtc->desiredX, eOutputPtr->crtc->desiredY);
+            xf86CrtcSetMode(hwc->primary_display.pCrtc, pMode, pOutputPtr->initial_rotation, pOutputPtr->crtc->desiredX,
+                            pOutputPtr->crtc->desiredY);
+            xf86CrtcSetMode(hwc->external_display.pCrtc, eMode, eOutputPtr->initial_rotation,
+                            eOutputPtr->crtc->desiredX, eOutputPtr->crtc->desiredY);
 
-            int width = pOutputPtr->initial_x + xf86ModeWidth(pMode, pOutputPtr->initial_rotation);
-            int height = pOutputPtr->initial_y + xf86ModeHeight(pMode, pOutputPtr->initial_rotation);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread width: %d, height: %d\n", width, height);
-            int modeWidth = xf86ModeWidth(eMode, eOutputPtr->initial_rotation);
-            int modeHeight = xf86ModeHeight(eMode, eOutputPtr->initial_rotation);
-            if ((eOutputPtr->initial_x + modeWidth) > width) {
-                width = eOutputPtr->initial_x + modeWidth;
-            }
-            if ((eOutputPtr->initial_y + modeHeight) > height) {
-                height = eOutputPtr->initial_y + modeHeight;
-            }
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread width: %d, height: %d, modeWidth: %d, modeHeight: %d, eIRot: %d\n", width, height, modeWidth, modeHeight, eOutputPtr->initial_rotation);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread RRScreenSizeSet e initial_x: %d, desiredX: %d\n", eOutputPtr->initial_x, eOutputPtr->crtc->desiredX);
-            int mmWidth = width * 25.4 / pScrn->xDpi;
-            int mmHeight = height * 25.4 / pScrn->yDpi;
-            ret = RRScreenSizeSet(pScreen, width, height, mmWidth, mmHeight);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread RRScreenSizeSet width: %d, height: %d, ret:%d\n", width, height, ret);
-
+            modeSetAndResize(pScreen, pScrn);
             hwc_egl_renderer_screen_init(pScreen, 1);
             hwc_set_power_mode(pScrn, HWC_DISPLAY_EXTERNAL, DPMSModeOn);
 
@@ -592,7 +577,9 @@ void *hwc_egl_renderer_thread(void *user_data)
             hwc->external_initialised = FALSE;
             hwc_egl_renderer_external_tidy(pScreen);
             Bool ret = xf86InitialConfiguration(pScrn, TRUE);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread xf86InitialConfiguration ret:%d, cOutput: %d\n", ret, hwc->connected_outputs);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+                       "hwc_egl_renderer_thread xf86InitialConfiguration ret:%d, cOutput: %d\n", ret,
+                       hwc->connected_outputs);
             xf86OutputPtr outputPtr = hwc->primary_display.pOutput;
 //            xf86CrtcPtr crtcPtr = hwc->primary_display.pCrtc;
 //            int width = crtcPtr->x + xf86ModeWidth(&crtcPtr->mode, crtcPtr->rotation);
@@ -602,7 +589,9 @@ void *hwc_egl_renderer_thread(void *user_data)
             int mmWidth = width * 25.4 / pScrn->xDpi;
             int mmHeight = height * 25.4 / pScrn->yDpi;
             ret = RRScreenSizeSet(pScreen, width, height, mmWidth, mmHeight);
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread external disconnected RRScreenSizeSet width: %d, height: %d, ret:%d\n", width, height, ret);
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+                       "hwc_egl_renderer_thread external disconnected RRScreenSizeSet width: %d, height: %d, ret:%d\n",
+                       width, height, ret);
         }
 
         pthread_mutex_lock(&(hwc->rendererLock));
@@ -616,7 +605,8 @@ void *hwc_egl_renderer_thread(void *user_data)
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread pDisp: %p\n", &hwc->primary_display);
             hwc_egl_renderer_update(pScreen, &hwc->primary_display);
         }
-        if (external_dirty && hwc->external_display.dpmsMode == DPMSModeOn && (hwc->connected_outputs & 2) && hwc->external_initialised) {
+        if (external_dirty && hwc->external_display.dpmsMode == DPMSModeOn && (hwc->connected_outputs & 2) &&
+            hwc->external_initialised) {
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread eDisp: %p\n", &hwc->external_display);
             hwc_egl_renderer_update(pScreen, &hwc->external_display);
         }

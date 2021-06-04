@@ -275,8 +275,8 @@ void hwc_present_hwcomposer2(void *user_data, struct ANativeWindow *window,
 
 void hwc_get_native_window(HWCPtr hwc, hwc_display_ptr hwc_display) {
 
-    xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "hwc_get_native_window width: %d, height: %d\n",
-               hwc_display->width, hwc_display->height);
+//    xf86DrvMsg(hwc_display->pCrtc->scrn->scrnIndex, X_INFO, "hwc_get_native_window width: %d, height: %d\n",
+//               hwc_display->width, hwc_display->height);
 
     hwc_display->hwc2_compat_layer = hwc2_compat_display_create_layer(hwc_display->hwc2_compat_display);
 

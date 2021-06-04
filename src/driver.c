@@ -640,9 +640,9 @@ void triggerGlamourEglFlush(HWCPtr hwc) {
 }
 
 void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn) {
-	HWCPtr hwc = HWCPTR(pScrn);
+    HWCPtr hwc = HWCPTR(pScrn);
 
-	if (hwc->damage && (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn)) {
+    if (hwc->damage && (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn)) {
         RegionPtr dirty = DamageRegion(hwc->damage);
         unsigned num_cliprects = REGION_NUM_RECTS(dirty);
 
@@ -656,15 +656,66 @@ void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn) {
     }
 }
 
-static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
-	ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
-	HWCPtr hwc = HWCPTR(pScrn);
+void modeSetAndResize(ScreenPtr pScreen, ScrnInfoPtr pScrn) {
+    HWCPtr hwc = HWCPTR(pScrn);
 
-	pScreen->BlockHandler = hwc->BlockHandler;
-	pScreen->BlockHandler(pScreen, timeout);
-	pScreen->BlockHandler = hwcBlockHandler;
+    xf86CrtcConfigPtr config = XF86_CRTC_CONFIG_PTR(pScrn);
+    xf86OutputPtr pOutputPtr = config->output[0];
+    DisplayModePtr pMode = hwc_output_get_modes(pOutputPtr);
+    xf86OutputPtr eOutputPtr = config->output[1];
+    DisplayModePtr eMode = hwc_output_get_modes(eOutputPtr);
+
+    int width = pOutputPtr->initial_x + xf86ModeWidth(pMode, pOutputPtr->initial_rotation);
+    int height = pOutputPtr->initial_y + xf86ModeHeight(pMode, pOutputPtr->initial_rotation);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "modeSetAndResize width: %d, height: %d\n", width, height);
+    int modeWidth = xf86ModeWidth(eMode, eOutputPtr->initial_rotation);
+    int modeHeight = xf86ModeHeight(eMode, eOutputPtr->initial_rotation);
+    if ((eOutputPtr->initial_x + modeWidth) > width) {
+        width = eOutputPtr->initial_x + modeWidth;
+    }
+    if ((eOutputPtr->initial_y + modeHeight) > height) {
+        height = eOutputPtr->initial_y + modeHeight;
+    }
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO,
+               "modeSetAndResize width: %d, height: %d, modeWidth: %d, modeHeight: %d, eIRot: %d\n", width, height,
+               modeWidth, modeHeight, eOutputPtr->initial_rotation);
+    if (eOutputPtr->crtc) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "modeSetAndResize RRScreenSizeSet e initial_x: %d, desiredX: %d\n",
+                   eOutputPtr->initial_x, eOutputPtr->crtc->desiredX);
+    }
+    int mmWidth = width * 25.4 / pScrn->xDpi;
+    int mmHeight = height * 25.4 / pScrn->yDpi;
+    int ret = RRScreenSizeSet(pScreen, width, height, mmWidth, mmHeight);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "modeSetAndResize RRScreenSizeSet width: %d, height: %d, ret:%d\n", width,
+               height, ret);
+}
+
+static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
+    ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
+    HWCPtr hwc = HWCPTR(pScrn);
+
+    pScreen->BlockHandler = hwc->BlockHandler;
+    if (!hwc->rendererIsRunning) {
+//        if (!xf86SetDesiredModes(pScrn)) {
+//            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler xf86SetDesiredModes failed\n");
+//        }
+        modeSetAndResize(pScreen, pScrn);
+    }
+    pScreen->BlockHandler(pScreen, timeout);
+    hwc->BlockHandler = pScreen->BlockHandler;
+    pScreen->BlockHandler = hwcBlockHandler;
 
 //    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler\n");
+    if (!hwc->rendererIsRunning) {
+        hwc->rendererIsRunning = 1;
+
+        if (pthread_mutex_init(&(hwc->rendererLock), NULL) ||
+            pthread_mutex_init(&(hwc->dirtyLock), NULL) ||
+            pthread_cond_init(&(hwc->dirtyCond), NULL) ||
+            pthread_create(&(hwc->rendererThread), NULL, hwc_egl_renderer_thread, pScreen)) {
+            FatalError("Error creating rendering thread\n");
+        }
+    }
 
     checkDamageAndTriggerRedraw(pScrn);
 }
@@ -696,14 +747,14 @@ CreateScreenResources(ScreenPtr pScreen)
     ret = AdjustScreenPixmap(pScrn, pScreen->width, pScreen->height);
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "CreateScreenResources adjusted screen pixmap - ret %d\n", ret);
 
-    hwc->rendererIsRunning = 1;
-
-    if (pthread_mutex_init(&(hwc->rendererLock), NULL) ||
-        pthread_mutex_init(&(hwc->dirtyLock), NULL) ||
-        pthread_cond_init(&(hwc->dirtyCond), NULL) ||
-        pthread_create(&(hwc->rendererThread), NULL, hwc_egl_renderer_thread, pScreen)) {
-        FatalError("Error creating rendering thread\n");
-    }
+//    hwc->rendererIsRunning = 1;
+//
+//    if (pthread_mutex_init(&(hwc->rendererLock), NULL) ||
+//        pthread_mutex_init(&(hwc->dirtyLock), NULL) ||
+//        pthread_cond_init(&(hwc->dirtyCond), NULL) ||
+//        pthread_create(&(hwc->rendererThread), NULL, hwc_egl_renderer_thread, pScreen)) {
+//        FatalError("Error creating rendering thread\n");
+//    }
 
     return ret;
 }
@@ -859,6 +910,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     if (!xf86CrtcScreenInit(pScreen)) {
         return FALSE;
     }
+    //This seems to stop default screen pixmap creation
     if (!xf86SetDesiredModes(pScrn)) {
         return FALSE;
     }
@@ -893,7 +945,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     if (serverGeneration == 1) {
         xf86ShowUnusedOptions(pScrn->scrnIndex, pScrn->options);
     }
-	
+
     /* Wrap the current BlockHandler function */
     hwc->BlockHandler = pScreen->BlockHandler;
     pScreen->BlockHandler = hwcBlockHandler;
@@ -909,8 +961,6 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
         xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
                     "Failed to initialize the Present extension.\n");
     }
-
-
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "ScreenInit End\n");
     return TRUE;
