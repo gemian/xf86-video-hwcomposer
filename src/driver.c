@@ -640,22 +640,26 @@ void triggerGlamourEglFlush(HWCPtr hwc) {
 }
 
 void checkDamageAndTriggerRedraw(ScrnInfoPtr pScrn) {
-	HWCPtr hwc = HWCPTR(pScrn);
+    HWCPtr hwc = HWCPTR(pScrn);
 
-	if ((hwc->primary_display.damage || hwc->external_display.damage) && (hwc->primary_display.dpmsMode == DPMSModeOn || hwc->external_display.dpmsMode == DPMSModeOn)) {
+    unsigned num_cliprects = 0;
+    if (hwc->primary_display.damage && hwc->primary_display.dpmsMode == DPMSModeOn) {
         RegionPtr pDirty = DamageRegion(hwc->primary_display.damage);
-        RegionPtr eDirty = DamageRegion(hwc->external_display.damage);
-        unsigned num_cliprects = REGION_NUM_RECTS(pDirty) + REGION_NUM_RECTS(eDirty);
-
-        if (num_cliprects) {
-            DamageEmpty(hwc->primary_display.damage);
-            DamageEmpty(hwc->external_display.damage);
-            if (hwc->glamor) {
-                triggerGlamourEglFlush(hwc);
-            }
-            hwc_trigger_redraw(pScrn);
-        }
+        num_cliprects += REGION_NUM_RECTS(pDirty);
+        DamageEmpty(hwc->primary_display.damage);
     }
+    if (hwc->external_display.damage && hwc->external_display.dpmsMode == DPMSModeOn) {
+        RegionPtr eDirty = DamageRegion(hwc->external_display.damage);
+        num_cliprects += REGION_NUM_RECTS(eDirty);
+        DamageEmpty(hwc->external_display.damage);
+    }
+    if (num_cliprects) {
+        if (hwc->glamor) {
+            triggerGlamourEglFlush(hwc);
+        }
+        hwc_trigger_redraw(pScrn);
+    }
+
 }
 
 static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
@@ -663,8 +667,16 @@ static void hwcBlockHandler(ScreenPtr pScreen, void *timeout) {
 	HWCPtr hwc = HWCPTR(pScrn);
 
 	pScreen->BlockHandler = hwc->BlockHandler;
+	if (!hwc->rendererIsRunning) {
+        if (!xf86SetDesiredModes(pScrn)) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler xf86SetDesiredModes failed\n");
+        }
+        xf86CrtcRotate(hwc->primary_display.pCrtc);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler xf86CrtcRotate transform_in_use: %d\n",hwc->primary_display.pCrtc->transform_in_use);
+    }
 	pScreen->BlockHandler(pScreen, timeout);
-	pScreen->BlockHandler = hwcBlockHandler;
+    hwc->BlockHandler = pScreen->BlockHandler;
+    pScreen->BlockHandler = hwcBlockHandler;
 
 //    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwcBlockHandler\n");
     if (!hwc->rendererIsRunning) {
@@ -880,6 +892,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     if (!xf86CrtcScreenInit(pScreen)) {
         return FALSE;
     }
+    //This seems to stop default screen pixmap creation
 //    if (!xf86SetDesiredModes(pScrn)) {
 //        return FALSE;
 //    }
@@ -914,7 +927,7 @@ ScreenInit(SCREEN_INIT_ARGS_DECL)
     if (serverGeneration == 1) {
         xf86ShowUnusedOptions(pScrn->scrnIndex, pScrn->options);
     }
-	
+
     /* Wrap the current BlockHandler function */
     hwc->BlockHandler = pScreen->BlockHandler;
     pScreen->BlockHandler = hwcBlockHandler;

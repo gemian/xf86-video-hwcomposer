@@ -263,7 +263,11 @@ dummy_crtc_shadow_allocate(xf86CrtcPtr crtc, int width, int height) {
     int index = (int64_t) crtc->driver_private;
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "dummy_crtc_shadow_allocate width: %d, height: %d, index: %d\n", width,
                height, index);
-    return NULL;
+    if (index == HWC_DISPLAY_PRIMARY) {
+        return &hwc->primary_display;
+    } else {
+        return &hwc->external_display;
+    }
 }
 
 PixmapPtr
@@ -296,16 +300,23 @@ get_crtc_pixmap(hwc_display_ptr hwc_display) {
     xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "get_crtc_pixmap width: %d, height: %d, index: %d\n", hwc_display->width,
                hwc_display->height, index);
 
-#ifdef ENABLE_GLAMOR
     if (hwc->glamor) {
+#ifdef ENABLE_GLAMOR
         crtcPixmap = glamor_create_pixmap(crtc->scrn->pScreen,
                                             hwc_display->width,
                                             hwc_display->height,
                                             PIXMAN_FORMAT_DEPTH(HYBRIS_PIXEL_FORMAT_RGBA_8888),
                                             GLAMOR_CREATE_NO_LARGE);
-        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap, index: %d\n", index);
-    }
+        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created glamor pixmap: %p, index: %d\n", crtcPixmap, index);
 #endif
+    } else {
+        crtcPixmap = (*crtc->scrn->pScreen->CreatePixmap)(crtc->scrn->pScreen,
+                                                          hwc_display->width,
+                                                          hwc_display->height,
+                                                          crtc->scrn->depth,
+                                                          0);
+        xf86DrvMsg(crtc->scrn->scrnIndex, X_INFO, "created pixmap: %p, index: %d\n", crtcPixmap, index);
+    }
 
     int err = hwc->egl_proc.eglHybrisCreateNativeBuffer(hwc_display->width, hwc_display->height,
                                                         HYBRIS_USAGE_HW_TEXTURE |
