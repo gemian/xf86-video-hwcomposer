@@ -389,13 +389,16 @@ void hwc_egl_renderer_external_tidy(ScreenPtr pScreen)
     HWCPtr hwc = HWCPTR(pScrn);
     hwc_renderer_ptr renderer = &hwc->external_display.hwc_renderer;
 
-    int ret = eglDestroySurface(hwc->egl_display, renderer->surface);
-    renderer->surface = NULL;
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_external_tidy destroySurface ret: %d\n", ret);
+//    int ret = eglDestroySurface(hwc->egl_display, renderer->surface);
+//    renderer->surface = NULL;
+//    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_external_tidy destroySurface ret: %d\n", ret);
 
 //    hwc2_compat_display_destroy_layer(hwc->external_display.hwc2_compat_display, hwc->external_display.hwc2_compat_layer);
 //    hwc->external_display.hwc2_compat_layer = NULL;
 //    hwc2_compat_display_set_power_mode(hwc->external_display.hwc2_compat_display, HWC2_POWER_MODE_OFF);
+
+    hwc_set_power_mode(pScrn, HWC_DISPLAY_EXTERNAL, DPMSModeOff);
+    hwc->external_display.dpmsMode = DPMSModeOff;
 
     hdmi_power_enable(FALSE);
     hdmi_enable(FALSE);
