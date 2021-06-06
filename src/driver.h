@@ -111,8 +111,8 @@ typedef struct {
 
 typedef struct {
     EGLSurface surface;
-    EGLContext context;
-    EGLContext renderContext;
+//    EGLContext context;
+//    EGLContext renderContext;
 //    GLuint rootTexture;
 
     float projection[16];
@@ -235,6 +235,8 @@ typedef struct HWCRec
     EGLSyncKHR egl_fence;
     hwc_renderer_shader rootShader;
     hwc_renderer_shader projShader;
+    EGLContext context;
+    EGLContext renderContext;
     GLuint rootTexture;
 
     pthread_t rendererThread;

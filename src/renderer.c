@@ -192,29 +192,29 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created primary window surface\n");
     }
 
-    if (!hwc->primary_display.hwc_renderer.context) {
+    if (!hwc->context) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init creating primary context\n");
-        hwc->primary_display.hwc_renderer.context = eglCreateContext((EGLDisplay) hwc->egl_display, hwc->egl_cfg, EGL_NO_CONTEXT, egl_ctxattr);
-        if (eglGetError() != EGL_SUCCESS || hwc->primary_display.hwc_renderer.context == EGL_NO_CONTEXT) {
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglCreateWindowSurface eglGetError: %d, primary context: %p\n", eglGetError(), hwc->primary_display.hwc_renderer.context);
+        hwc->context = eglCreateContext((EGLDisplay) hwc->egl_display, hwc->egl_cfg, EGL_NO_CONTEXT, egl_ctxattr);
+        if (eglGetError() != EGL_SUCCESS || hwc->context == EGL_NO_CONTEXT) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglCreateWindowSurface eglGetError: %d, context: %p\n", eglGetError(), hwc->context);
         }
         assert(eglGetError() == EGL_SUCCESS);
-        assert(hwc->primary_display.hwc_renderer.context != EGL_NO_CONTEXT);
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created primary context\n");
+        assert(hwc->context != EGL_NO_CONTEXT);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created context\n");
     }
 
     // Create shared context for render thread
-    if (!hwc->primary_display.hwc_renderer.renderContext) {
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init creating render primary context\n");
-        hwc->primary_display.hwc_renderer.renderContext = eglCreateContext(hwc->egl_display, hwc->egl_cfg, hwc->primary_display.hwc_renderer.context, egl_ctxattr);
-        if (eglGetError() != EGL_SUCCESS || hwc->primary_display.hwc_renderer.renderContext == EGL_NO_CONTEXT) {
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglCreateWindowSurface eglGetError: %d, primary surface: %p\n", eglGetError(), hwc->primary_display.hwc_renderer.renderContext);
+    if (!hwc->renderContext) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init creating renderContext\n");
+        hwc->renderContext = eglCreateContext(hwc->egl_display, hwc->egl_cfg, hwc->context, egl_ctxattr);
+        if (eglGetError() != EGL_SUCCESS || hwc->renderContext == EGL_NO_CONTEXT) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglCreateWindowSurface eglGetError: %d, renderContext: %p\n", eglGetError(), hwc->renderContext);
         }
         assert(eglGetError() == EGL_SUCCESS);
-        assert(hwc->primary_display.hwc_renderer.renderContext != EGL_NO_CONTEXT);
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created render primary context\n");
+        assert(hwc->renderContext != EGL_NO_CONTEXT);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init created renderContext\n");
     }
-    rv = eglMakeCurrent((EGLDisplay) hwc->egl_display, hwc->primary_display.hwc_renderer.surface, hwc->primary_display.hwc_renderer.surface, hwc->primary_display.hwc_renderer.context);
+    rv = eglMakeCurrent((EGLDisplay) hwc->egl_display, hwc->primary_display.hwc_renderer.surface, hwc->primary_display.hwc_renderer.surface, hwc->context);
     if (eglGetError() != EGL_SUCCESS || rv != EGL_TRUE) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglMakeCurrent primarySurface eglGetError: %d, rv: %d\n", eglGetError(), rv);
     }
@@ -237,7 +237,7 @@ Bool hwc_egl_renderer_init(ScrnInfoPtr pScrn, Bool do_glamor)
     glGenTextures(1, &hwc->cursorTexture);
 
     // Reattach context as surfaceless so it can be used in different thread
-    rv = eglMakeCurrent(hwc->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, hwc->primary_display.hwc_renderer.context);
+    rv = eglMakeCurrent(hwc->egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, hwc->context);
     if (eglGetError() != EGL_SUCCESS || rv != EGL_TRUE) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_init eglMakeCurrent NoSurface eglGetError: %d, rv: %d\n", eglGetError(), rv);
     }
@@ -291,29 +291,29 @@ void hwc_egl_renderer_screen_init(ScreenPtr pScreen, int disp)
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created external window surface\n");
     }
 
-    if (!renderer->context) {
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init creating external context\n");
-        renderer->context = eglCreateContext((EGLDisplay) hwc->egl_display, hwc->egl_cfg, EGL_NO_CONTEXT, egl_ctxattr);
-        if (eglGetError() != EGL_SUCCESS || renderer->context == EGL_NO_CONTEXT) {
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init eglCreateContext eglError: %d, context: %p\n",eglGetError(),renderer->context);
+    if (!hwc->context) {
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init creating context\n");
+        hwc->context = eglCreateContext((EGLDisplay) hwc->egl_display, hwc->egl_cfg, EGL_NO_CONTEXT, egl_ctxattr);
+        if (eglGetError() != EGL_SUCCESS || hwc->context == EGL_NO_CONTEXT) {
+            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init eglCreateContext eglError: %d, context: %p\n",eglGetError(),hwc->context);
         }
         assert(eglGetError() == EGL_SUCCESS);
-        assert(renderer->context != EGL_NO_CONTEXT);
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created external context\n");
+        assert(hwc->context != EGL_NO_CONTEXT);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created context\n");
     }
 
-    if (!renderer->renderContext) {
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init creating render external surface\n");
-        renderer->renderContext = eglCreateContext(hwc->egl_display, hwc->egl_cfg, renderer->context, egl_ctxattr);
-        if (eglGetError() != EGL_SUCCESS || renderer->renderContext == EGL_NO_CONTEXT) {
-            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init eglCreateContext eglError: %d, renderContext: %p\n",eglGetError(),renderer->renderContext);
-        }
-        assert(eglGetError() == EGL_SUCCESS);
-        assert(renderer->renderContext != EGL_NO_CONTEXT);
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created render external surface\n");
-    }
+//    if (!renderer->renderContext) {
+//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init creating render external surface\n");
+//        renderer->renderContext = eglCreateContext(hwc->egl_display, hwc->egl_cfg, renderer->context, egl_ctxattr);
+//        if (eglGetError() != EGL_SUCCESS || renderer->renderContext == EGL_NO_CONTEXT) {
+//            xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init eglCreateContext eglError: %d, renderContext: %p\n",eglGetError(),renderer->renderContext);
+//        }
+//        assert(eglGetError() == EGL_SUCCESS);
+//        assert(renderer->renderContext != EGL_NO_CONTEXT);
+//        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init created render external surface\n");
+//    }
 
-    int result = eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, renderer->renderContext);
+    int result = eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, hwc->renderContext);
     if (eglGetError() != EGL_SUCCESS || result != EGL_TRUE) {
         xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_screen_init eglMakeCurrent: %d %d\n", eglGetError(), result);
     }
@@ -393,9 +393,9 @@ void hwc_egl_renderer_external_tidy(ScreenPtr pScreen)
     renderer->surface = NULL;
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_external_tidy destroySurface ret: %d\n", ret);
 
-    hwc2_compat_display_destroy_layer(hwc->external_display.hwc2_compat_display, hwc->external_display.hwc2_compat_layer);
-    hwc->external_display.hwc2_compat_layer = NULL;
-    hwc2_compat_display_set_power_mode(hwc->external_display.hwc2_compat_display, HWC2_POWER_MODE_OFF);
+//    hwc2_compat_display_destroy_layer(hwc->external_display.hwc2_compat_display, hwc->external_display.hwc2_compat_layer);
+//    hwc->external_display.hwc2_compat_layer = NULL;
+//    hwc2_compat_display_set_power_mode(hwc->external_display.hwc2_compat_display, HWC2_POWER_MODE_OFF);
 
     hdmi_power_enable(FALSE);
     hdmi_enable(FALSE);
@@ -517,8 +517,7 @@ void *hwc_egl_renderer_thread(void *user_data) {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
     HWCPtr hwc = HWCPTR(pScrn);
     bool external_ever_initialised = FALSE;
-    bool primary_dirty = FALSE;
-    bool external_dirty = FALSE;
+    bool was_dirty = FALSE;
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread\n");
 
@@ -532,7 +531,7 @@ void *hwc_egl_renderer_thread(void *user_data) {
             pthread_cond_wait(&(hwc->dirtyCond), &(hwc->dirtyLock));
         }
 
-        primary_dirty = hwc->dirty;
+        was_dirty = hwc->dirty;
         hwc->dirty = FALSE;
 
         pthread_mutex_unlock(&(hwc->dirtyLock));
@@ -566,11 +565,11 @@ void *hwc_egl_renderer_thread(void *user_data) {
             modeSetAndResize(pScreen, pScrn);
             hwc_egl_renderer_screen_init(pScreen, 1);
             hwc_set_power_mode(pScrn, HWC_DISPLAY_EXTERNAL, DPMSModeOn);
+            hwc->external_display.dpmsMode = DPMSModeOn;
 
             updateProjection(pScrn, HWC_DISPLAY_EXTERNAL);
             hwc->external_initialised = TRUE;
             external_ever_initialised = TRUE;
-//            external_dirty = FALSE;
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread updated projection\n");
         }
         if (!(hwc->connected_outputs & 2) && hwc->external_initialised) {
@@ -601,11 +600,11 @@ void *hwc_egl_renderer_thread(void *user_data) {
                                  EGL_SYNC_FLUSH_COMMANDS_BIT_KHR,
                                  EGL_FOREVER_KHR);
         }
-        if (primary_dirty && hwc->primary_display.dpmsMode == DPMSModeOn) {
+        if (was_dirty && hwc->primary_display.dpmsMode == DPMSModeOn) {
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread pDisp: %p\n", &hwc->primary_display);
             hwc_egl_renderer_update(pScreen, &hwc->primary_display);
         }
-        if (external_dirty && hwc->external_display.dpmsMode == DPMSModeOn && (hwc->connected_outputs & 2) &&
+        if (was_dirty && hwc->external_display.dpmsMode == DPMSModeOn && (hwc->connected_outputs & 2) &&
             hwc->external_initialised) {
             xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_thread eDisp: %p\n", &hwc->external_display);
             hwc_egl_renderer_update(pScreen, &hwc->external_display);
@@ -630,18 +629,20 @@ void hwc_egl_renderer_update(ScreenPtr pScreen, hwc_display_ptr display)
     HWCPtr hwc = HWCPTR(pScrn);
     hwc_renderer_ptr renderer = &display->hwc_renderer;
 
-//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, renderer->context);
+//	xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, hwc->context);
 
-    int ret = eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, renderer->renderContext);
+    int ret = eglMakeCurrent(hwc->egl_display, renderer->surface, renderer->surface, hwc->renderContext);
     if (ret != EGL_TRUE) {
-        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, renderer->context);
+        xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update surface: %p, context: %p\n", renderer->surface, hwc->renderContext);
     }
     assert(ret == EGL_TRUE);
 
     xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update glamor: %d, viewport width: %d, height: %d\n",
                hwc->glamor, display->width, display->height);
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update screen w: %d, h: %d, cBx2: %d, cBy2: %d\n",
-               pScreen->width, pScreen->height, display->pCrtc->bounds.x2, display->pCrtc->bounds.y2);
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "hwc_egl_renderer_update screen w: %d, h: %d, x: %d, y: %d, cBx1: %d, cBy1: %d, cBx2: %d, cBy2: %d\n",
+               pScreen->width, pScreen->height, display->pCrtc->x, display->pCrtc->y,
+               display->pCrtc->bounds.x1, display->pCrtc->bounds.y1,
+               display->pCrtc->bounds.x2, display->pCrtc->bounds.y2);
 
     if (hwc->glamor) {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
